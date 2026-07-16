@@ -9,6 +9,11 @@
 - 테스트는 yfinance 등 외부 네트워크 호출 없이, 고정된 샘플 데이터(fixture)로 검증한다.
 - 테스트 실행: `pytest` (retirement-planner 루트에서)
 
+## 커밋 전 확인
+
+- 구현이 끝나면 바로 커밋하지 않는다. pytest 결과와 변경 내용을 사용자에게 보여주고,
+  실제로 잘 동작하는지 사용자에게 확인(승인)받은 뒤에만 `git commit`을 실행한다.
+
 ## Commit Message
 
 [Conventional Commits](https://www.conventionalcommits.org/) 형식을 따른다.
@@ -29,3 +34,6 @@
   - `## 한 것`에 새로 완료된 항목 추가
   - `## 아직 안 한 것`, `## 다음 후보`에서 이미 끝난 항목 제거/조정
 - PROGRESS.md 업데이트는 별도 커밋(`docs: update progress`)으로 분리한다.
+- PROGRESS.md에는 구현 상태(무엇을 했는지)와 push 상태(어디까지 push됐는지)는 적는다.
+  다만 어느 기기에서 작업했는지, 누가 확인했는지 같은 불필요한 진행 과정/메타 정보는
+  적지 않는다.
