@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from portfolio import simulate_portfolio
-from withdrawal import simulate_withdrawal
+from simulator.portfolio import simulate_portfolio
+from simulator.withdrawal import simulate_withdrawal
 
 
 def _make_data(prices: dict):
@@ -35,6 +35,20 @@ def test_portfolio_depletes_and_stays_at_zero():
     assert value.iloc[1] == pytest.approx(0.5)
     assert value.iloc[2] == 0.0
     assert value.iloc[-1] == 0.0
+
+
+def test_inflation_adjusted_withdrawal_grows_each_year():
+    close, div = _make_data({"A": [10, 10, 10, 10]})
+    weights = {"A": 1.0}
+
+    value = simulate_withdrawal(
+        close, div, weights, withdrawal_rate=0.1, initial_capital=1.0, inflation_rate=0.1
+    )
+
+    # year 1 withdrawal = 0.1 (base); year 2 withdrawal = 0.1 * 1.1 = 0.11
+    assert value.iloc[0] == pytest.approx(0.9)
+    assert value.iloc[2] == pytest.approx(0.9 - 0.11)
+    assert value.iloc[-1] == pytest.approx(0.9 - 0.11)
 
 
 def test_zero_withdrawal_rate_matches_plain_rebalanced_portfolio():

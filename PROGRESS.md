@@ -54,11 +54,17 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
   (초기 자본 × 인출률)을 인출. 잔고가 0 이하가 되면 그 시점부터 0으로 고정(고갈)
 - `simulator/tests/test_withdrawal.py` - 매년 인출 반영, 고갈 후 0 유지,
   인출률 0일 때 `simulate_portfolio`(annual 리밸런싱)와 결과 일치 검증
-- 아직 인플레이션 조정 없음 (매년 인출액이 실질 가치로 감소하지 않고 고정 명목 금액)
+
+### 7. Inflation Adjustment
+- `simulator/inflation.py` - `inflation_adjusted_withdrawal()`: 기준 인출액을
+  경과 연수만큼 인플레이션율로 복리 성장시켜 명목 인출액 계산
+- `simulator/withdrawal.py` - `simulate_withdrawal()`에 `inflation_rate` 파라미터 추가.
+  매년 인출액이 물가만큼 커지도록 반영 (기본값 0.0이면 기존과 동일하게 고정 인출)
+- `simulator/tests/test_inflation.py`, `simulator/tests/test_withdrawal.py` - 인플레이션
+  0/첫해/복리 성장 검증, 인출액이 매년 커지는지 검증
 
 ## 아직 안 한 것 (지금 상태의 한계)
 
-- Inflation Adjustment (인출액 물가 연동)
 - Monte Carlo Simulation
 - Retirement Score Engine
 - Portfolio Ranking
@@ -67,5 +73,4 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 
 ## 다음 후보
 
-1. Inflation Adjustment - 매년 인출액을 물가상승률만큼 조정
-2. Monte Carlo Engine - 확률적 시뮬레이션으로 생존 확률 계산
+1. Monte Carlo Engine - 확률적 시뮬레이션으로 생존 확률 계산
