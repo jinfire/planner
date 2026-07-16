@@ -1,3 +1,5 @@
+import pandas as pd
+
 from generator import generate_portfolios
 from ranking import rank_portfolios
 from simulator.data import fetch_price_data
@@ -15,6 +17,7 @@ ASSUMED_INFLATION_RATE = 0.03
 RETIREMENT_YEARS = 30
 NUM_SIMULATIONS = 200
 SEED = 42
+RESULTS_CSV = "results.csv"
 
 
 def main():
@@ -51,6 +54,10 @@ def main():
         )
 
     ranked = rank_portfolios(results)
+
+    df = pd.DataFrame([{**r["weights"], **{k: v for k, v in r.items() if k != "weights"}} for r in ranked])
+    df.to_csv(RESULTS_CSV, index=False)
+    print(f"Saved {len(df)} ranked portfolios to {RESULTS_CSV}\n")
 
     print("Top 5 by Retirement Score:")
     for r in ranked[:5]:

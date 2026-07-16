@@ -116,6 +116,12 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
   QQQ 70%/SCHD 30%가 1위(Score=103.2, 생존확률 100%, MDD -29.29%)로 바뀜 -
   위험(MDD)과 생존확률을 반영한 점수가 실제로 순위에 영향을 준다는 것 확인
 
+### 12. 결과를 CSV로 저장
+- `main.py` - 상위 5개만 콘솔 출력하던 걸, 66개 전체를 `results.csv`로 저장하도록
+  변경 (콘솔 출력은 그대로 상위 5개만 유지)
+- `results.csv`는 실행할 때마다 새로 생기는 산출물이라 `.gitignore`에 추가
+  (git에는 안 올림)
+
 ## 아직 안 한 것 (지금 상태의 한계)
 
 - Portfolio Planner (LLM) - 후보 ETF 선정
