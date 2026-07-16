@@ -106,6 +106,40 @@ Performance metrics include:
 -   Final Wealth
 -   Retirement Score
 
+## Data Availability
+
+The system only uses real historical market data. It does not fabricate
+pre-inception price history for a ticker.
+
+### Inflation rate source
+
+-   **Historical Backtest**: uses the actual historical CPI index (US
+    CPIAUCSL, from FRED) over the backtest period, so withdrawals track real
+    inflation rather than an assumption.
+-   **Monte Carlo Simulation**: projects into the future, where no real CPI
+    data exists yet, so it uses an assumed constant inflation rate instead.
+
+### Candidate ETFs with different inception dates
+
+Candidate ETFs from the Portfolio Planner can have very different listing
+dates (e.g. QQQ: 1999, TLT: 2002, SCHD: 2011). The Simulator only backtests
+over the date range where **every** candidate ETF has data (the intersection
+of their histories) and reports that effective range, rather than silently
+truncating or fabricating data.
+
+Reconstructing an ETF's pre-inception performance from its underlying
+holdings was considered and rejected for now:
+
+-   Free data sources only expose an ETF's **current** top holdings (e.g. the
+    top ~10 by weight), not its full historical constituent list and weights
+    at each point in the past.
+-   Applying today's holdings retroactively models "what if I'd held today's
+    basket back then," not the ETF's actual (different) historical
+    composition — a materially different, easily-mislabeled result.
+-   This approximation is more defensible for products with a fully
+    mechanical replication formula (e.g. a 2x leveraged ETF tracking a
+    long-lived index), and may be revisited for that narrower case.
+
 ## Portfolio Ranking
 
 Ranks every simulated portfolio by Retirement Score.
@@ -136,6 +170,9 @@ retirement-planner/
 │   ├── portfolio.py           # Dividend Engine + Rebalancing Engine
 │   ├── rebalance.py
 │   ├── withdrawal.py          # Withdrawal Engine
+│   ├── inflation.py           # Inflation Engine (assumed rate, for Monte Carlo)
+│   ├── cpi.py                 # Inflation Engine (actual CPI, for Historical Backtest)
+│   ├── monte_carlo.py         # Monte Carlo Engine
 │   ├── metrics.py             # Metrics Engine
 │   └── tests/
 ├── ranking/                  # Portfolio Ranking

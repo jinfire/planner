@@ -15,9 +15,12 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 ## 설계 결정
 
 - **인플레이션율 소스**: 백테스트(Historical Backtest)는 실제 과거 CPI 데이터를 써서
-  일관성 유지 (아직 미구현 - 현재 `inflation_rate`는 호출자가 넘겨주는 파라미터).
-  Monte Carlo Simulation은 미래를 다루므로 실제 데이터가 없어 가정치(고정 inflation_rate)
-  사용.
+  일관성 유지. Monte Carlo Simulation은 미래를 다루므로 실제 데이터가 없어 가정치
+  (고정 `inflation_rate`) 사용.
+- **후보 티커 중 상장일이 늦은 종목이 있을 때**: 지금은 모든 후보 티커가 공통으로
+  데이터를 가진 기간(교집합)만 사용 (`fetch_price_data`의 `dropna()`가 이미 이렇게
+  동작함). 가상 데이터로 상장 전 기간을 채우는 건 아직 안 함 - 레버리지 ETF처럼
+  복제 공식이 명확한 경우에 한해 나중에 옵션으로 고려.
 
 ## 한 것
 
@@ -82,10 +85,21 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 - QQQ/SCHD 60:40 실데이터로 확인: 30년 4% 인출 + 3% 인플레이션 가정 시 생존확률 99.9%
   (2012~2024 강세장 데이터라 낙관적인 수치 - 나중에 더 긴/다양한 기간 데이터 필요)
 
+### 9. CPI 연동 (실제 인플레이션 데이터)
+- `simulator/cpi.py`
+  - `fetch_cpi()`: FRED(세인트루이스 연준)의 CPIAUCSL(월간 CPI) 지수를 API 키 없이
+    CSV로 fetch, 기간으로 slice
+  - `cpi_adjusted_withdrawal()`: 기준 인출액에 실제 CPI 비율(해당 시점 CPI / 첫
+    인출 시점 CPI)을 곱해 명목 인출액 계산 - 가정치가 아닌 실제 물가로 조정
+- `simulator/withdrawal.py` - `simulate_withdrawal()`에 `cpi` 파라미터 추가.
+  `cpi`를 넘기면 실제 CPI로, 안 넘기면 기존처럼 `inflation_rate` 가정치로 계산
+- `simulator/tests/test_cpi.py`, `simulator/tests/test_withdrawal.py` - CPI 데이터
+  fetch/slice 검증(네트워크 mock), CPI 비율 계산 검증, 실제 인출 시뮬레이션에
+  CPI가 반영되는지 검증
+- QQQ/SCHD 60:40 + 실제 CPI로 확인: 4% 인출 시 2012~2024 기간 고갈 없이 잔고 성장
+
 ## 아직 안 한 것 (지금 상태의 한계)
 
-- 백테스트용 실제 CPI 데이터 연동 (설계 결정 참고, 지금은 `inflation_rate`가
-  호출자가 넘기는 파라미터일 뿐)
 - Retirement Score Engine
 - Portfolio Ranking
 - Portfolio Planner (LLM) - 후보 ETF 선정

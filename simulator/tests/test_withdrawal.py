@@ -51,6 +51,22 @@ def test_inflation_adjusted_withdrawal_grows_each_year():
     assert value.iloc[-1] == pytest.approx(0.9 - 0.11)
 
 
+def test_cpi_based_withdrawal_tracks_actual_inflation():
+    close, div = _make_data({"A": [10, 10, 10, 10]})
+    weights = {"A": 1.0}
+    dates = close.index
+    cpi = pd.Series([100.0, 106.0], index=[dates[0], dates[2]])
+
+    value = simulate_withdrawal(
+        close, div, weights, withdrawal_rate=0.1, initial_capital=1.0, cpi=cpi
+    )
+
+    # year 1 withdrawal = 0.1 (base, CPI ratio 1.0); year 2 = 0.1 * 106/100 = 0.106
+    assert value.iloc[0] == pytest.approx(0.9)
+    assert value.iloc[2] == pytest.approx(0.9 - 0.106)
+    assert value.iloc[-1] == pytest.approx(0.9 - 0.106)
+
+
 def test_zero_withdrawal_rate_matches_plain_rebalanced_portfolio():
     close, div = _make_data({"A": [10, 11, 12, 13], "B": [20, 19, 22, 21]})
     weights = {"A": 0.5, "B": 0.5}
