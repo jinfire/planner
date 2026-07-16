@@ -174,8 +174,11 @@ retirement-planner/
 │   ├── cpi.py                 # Inflation Engine (actual CPI, for Historical Backtest)
 │   ├── monte_carlo.py         # Monte Carlo Engine
 │   ├── metrics.py             # Metrics Engine
+│   ├── retirement_score.py    # Retirement Score Engine
 │   └── tests/
 ├── ranking/                  # Portfolio Ranking
+│   ├── ranking.py
+│   └── tests/
 ├── advisor/                  # Advisor (LLM)
 └── main.py                   # Wires the pipeline together, owned by no single stage
 ```

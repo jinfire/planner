@@ -98,14 +98,30 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
   CPI가 반영되는지 검증
 - QQQ/SCHD 60:40 + 실제 CPI로 확인: 4% 인출 시 2012~2024 기간 고갈 없이 잔고 성장
 
+### 10. Retirement Score Engine
+- `simulator/retirement_score.py` - `retirement_score()`: 생존확률·CAGR·MDD를
+  가중합해서 하나의 점수로 산출 (생존확률 100배 + CAGR 100배 - |MDD| 50배).
+  0~100 절대 등급이 아니라 포트폴리오 간 상대 비교/정렬용
+- `simulator/tests/test_retirement_score.py` - 생존확률/CAGR 높을수록,
+  MDD 클수록 점수 방향이 맞는지, 알려진 값 검증
+
+### 11. Portfolio Ranking
+- `ranking/ranking.py` - `rank_portfolios()`: retirement_score 기준 내림차순 정렬,
+  입력 리스트는 변경하지 않음
+- `ranking/tests/test_ranking.py` - 정렬 순서, 빈 리스트, 원본 미변경 검증
+- `main.py` - Generator → Simulator(백테스트+Monte Carlo) → retirement_score →
+  Ranking까지 전체 파이프라인 연결. QQQ/SCHD/TLT 66개 조합을 4%룰+3%인플레이션
+  가정, 30년/200회 Monte Carlo로 계산해서 Retirement Score 상위 5개 출력
+- 실행 결과: CAGR만으로 줄 세우면 QQQ 100%가 1위였는데, Retirement Score로는
+  QQQ 70%/SCHD 30%가 1위(Score=103.2, 생존확률 100%, MDD -29.29%)로 바뀜 -
+  위험(MDD)과 생존확률을 반영한 점수가 실제로 순위에 영향을 준다는 것 확인
+
 ## 아직 안 한 것 (지금 상태의 한계)
 
-- Retirement Score Engine
-- Portfolio Ranking
 - Portfolio Planner (LLM) - 후보 ETF 선정
 - Advisor (LLM) - 결과 설명
 
 ## 다음 후보
 
-1. Retirement Score Engine - 지표들을 종합해서 하나의 점수로 산출
-2. Portfolio Ranking - Generator가 만든 모든 조합을 점수로 정렬
+1. Portfolio Planner (LLM) - 사용자 입력을 받아 후보 ETF를 선정 (여기부터 LLM 시작)
+2. Advisor (LLM) - 1위 포트폴리오가 선정된 이유, 강점/약점/리스크/대안 설명
