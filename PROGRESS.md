@@ -122,12 +122,32 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 - `results.csv`는 실행할 때마다 새로 생기는 산출물이라 `.gitignore`에 추가
   (git에는 안 올림)
 
+### 13. Portfolio Planner (LLM) - 최소 슬라이스
+- `planner/planner.py`
+  - `select_candidate_etfs()`: 사용자 입력(추가 납입액/현재 자산/필요 월 소득/
+    자유 요청)을 프롬프트로 만들어 Claude API에 보내고, 응답에서 후보 티커
+    리스트를 뽑아옴. 포트폴리오 비중은 절대 정하지 않음 (architecture-1.md와
+    동일한 제약)
+  - `_parse_candidate_etfs()`: LLM 응답 텍스트를 JSON으로 파싱해서 검증하는
+    순수 함수로 분리 (네트워크 없이 독립적으로 테스트 가능)
+  - `select_candidate_etfs()`는 `client` 파라미터로 Anthropic 클라이언트를
+    주입받음 (기본값은 실제 클라이언트) - 테스트에서 가짜 클라이언트로
+    교체해서 실제 API 호출 없이 검증
+- `planner/tests/test_planner.py` - JSON 파싱/빈 리스트/깨진 JSON 검증,
+  가짜 클라이언트로 호출 흐름 검증, 사용자 입력이 프롬프트에 잘 들어가는지 검증
+- `requirements.txt`, `DEPENDENCIES.md` - `anthropic` SDK 추가.
+  실제 호출에는 `ANTHROPIC_API_KEY` 환경변수가 필요 (이 환경엔 키가 없어서
+  아직 실제 LLM 호출로 검증은 못 함 - mock 테스트만 통과한 상태)
+- 아직 `main.py`에 연결 안 함 (API 키 없이도 기존 파이프라인이 계속 돌아가야
+  해서 별도로 둠)
+
 ## 아직 안 한 것 (지금 상태의 한계)
 
-- Portfolio Planner (LLM) - 후보 ETF 선정
+- Portfolio Planner를 실제 API 키로 검증 (지금은 mock 테스트만 통과)
+- Portfolio Planner를 main.py에 연결
 - Advisor (LLM) - 결과 설명
 
 ## 다음 후보
 
-1. Portfolio Planner (LLM) - 사용자 입력을 받아 후보 ETF를 선정 (여기부터 LLM 시작)
-2. Advisor (LLM) - 1위 포트폴리오가 선정된 이유, 강점/약점/리스크/대안 설명
+1. Advisor (LLM) - 1위 포트폴리오가 선정된 이유, 강점/약점/리스크/대안 설명
+2. Planner를 실제 API 키로 검증 후 main.py에 연결

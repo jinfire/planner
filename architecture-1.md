@@ -161,7 +161,9 @@ another stage's folder.
 
 ``` text
 retirement-planner/
-├── planner/                # Portfolio Planner (LLM)
+├── planner/                 # Portfolio Planner (LLM)
+│   ├── planner.py
+│   └── tests/
 ├── generator/               # Portfolio Generator
 │   ├── generator.py
 │   └── tests/
