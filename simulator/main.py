@@ -1,26 +1,36 @@
 from data import fetch_price_data
+from generator import generate_portfolios
 from portfolio import simulate_portfolio
 from metrics import cagr, annual_volatility, max_drawdown
-from rebalance import REBALANCE_FREQUENCIES
 
-TICKERS = ["QQQ", "SCHD"]
-WEIGHTS = {"QQQ": 0.6, "SCHD": 0.4}
+TICKERS = ["QQQ", "SCHD", "TLT"]
 START = "2012-01-01"
 END = "2024-12-31"
+REBALANCE_FREQ = "annual"
 
 
 def main():
     close, dividends = fetch_price_data(TICKERS, START, END)
+    portfolios = generate_portfolios(TICKERS, step=10)
+    print(f"Generated {len(portfolios)} portfolios from {TICKERS}\n")
 
-    print(f"Portfolio: {WEIGHTS}")
-    print(f"Period: {START} ~ {END}\n")
+    results = []
+    for weights in portfolios:
+        value = simulate_portfolio(close, dividends, weights, rebalance_freq=REBALANCE_FREQ)
+        results.append(
+            {
+                "weights": weights,
+                "cagr": cagr(value),
+                "volatility": annual_volatility(value),
+                "mdd": max_drawdown(value),
+            }
+        )
 
-    for freq in REBALANCE_FREQUENCIES:
-        value = simulate_portfolio(close, dividends, WEIGHTS, rebalance_freq=freq)
-        print(f"[rebalance={freq}]")
-        print(f"  CAGR: {cagr(value):.2%}")
-        print(f"  Annual Volatility: {annual_volatility(value):.2%}")
-        print(f"  Max Drawdown: {max_drawdown(value):.2%}")
+    results.sort(key=lambda r: r["cagr"], reverse=True)
+
+    print("Top 5 by CAGR:")
+    for r in results[:5]:
+        print(f"  {r['weights']}  CAGR={r['cagr']:.2%}  Vol={r['volatility']:.2%}  MDD={r['mdd']:.2%}")
 
 
 if __name__ == "__main__":
