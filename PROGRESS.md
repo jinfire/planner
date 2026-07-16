@@ -12,6 +12,13 @@ User → Portfolio Planner (LLM) → Portfolio Generator → Portfolio Simulator
 LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfolio Simulator`부터
 바닥부터 쌓는 중.
 
+## 설계 결정
+
+- **인플레이션율 소스**: 백테스트(Historical Backtest)는 실제 과거 CPI 데이터를 써서
+  일관성 유지 (아직 미구현 - 현재 `inflation_rate`는 호출자가 넘겨주는 파라미터).
+  Monte Carlo Simulation은 미래를 다루므로 실제 데이터가 없어 가정치(고정 inflation_rate)
+  사용.
+
 ## 한 것
 
 ### 1. Simulator 최소 슬라이스
@@ -63,9 +70,22 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 - `simulator/tests/test_inflation.py`, `simulator/tests/test_withdrawal.py` - 인플레이션
   0/첫해/복리 성장 검증, 인출액이 매년 커지는지 검증
 
+### 8. Monte Carlo Simulation
+- `simulator/monte_carlo.py`
+  - `annual_returns()`: 일별 포트폴리오 가치 시계열에서 연간 수익률 배열 추출
+  - `simulate_paths()`: 과거 연간 수익률을 부트스트랩(복원추출)해서 `years`년치
+    무작위 경로를 `num_simulations`번 생성, 인플레이션 조정 인출을 적용해서
+    각 경로의 최종 잔고 계산 (`inflation_rate`는 가정치 파라미터, 설계 결정 참고)
+  - `survival_probability()`: 최종 잔고가 0보다 큰 경로의 비율
+- `simulator/tests/test_monte_carlo.py` - 연간 수익률 계산, 단일 수익률 복리 검증,
+  인출로 고갈되는 케이스, seed로 재현 가능한지, 생존확률 계산 검증
+- QQQ/SCHD 60:40 실데이터로 확인: 30년 4% 인출 + 3% 인플레이션 가정 시 생존확률 99.9%
+  (2012~2024 강세장 데이터라 낙관적인 수치 - 나중에 더 긴/다양한 기간 데이터 필요)
+
 ## 아직 안 한 것 (지금 상태의 한계)
 
-- Monte Carlo Simulation
+- 백테스트용 실제 CPI 데이터 연동 (설계 결정 참고, 지금은 `inflation_rate`가
+  호출자가 넘기는 파라미터일 뿐)
 - Retirement Score Engine
 - Portfolio Ranking
 - Portfolio Planner (LLM) - 후보 ETF 선정
@@ -73,4 +93,5 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 
 ## 다음 후보
 
-1. Monte Carlo Engine - 확률적 시뮬레이션으로 생존 확률 계산
+1. Retirement Score Engine - 지표들을 종합해서 하나의 점수로 산출
+2. Portfolio Ranking - Generator가 만든 모든 조합을 점수로 정렬
