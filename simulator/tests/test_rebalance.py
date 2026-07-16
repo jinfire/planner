@@ -1,6 +1,6 @@
 import pandas as pd
 
-from rebalance import rebalance_dates
+from simulator.rebalance import rebalance_dates
 
 
 def test_none_frequency_returns_empty_set():

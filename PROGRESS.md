@@ -38,7 +38,17 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 - `simulator/main.py` - QQQ/SCHD/TLT 3종목, 10% 단위로 조합 생성 → 각 조합 시뮬레이션 →
   CAGR 기준 상위 5개 출력까지 연결
 
-### 5. Withdrawal Engine (최소 슬라이스)
+### 5. 폴더 구조를 아키텍처 파이프라인에 맞게 재정리
+- `generator.py`를 `simulator/` 밖으로 빼서 `generator/` 패키지로 분리 (Generator는
+  Simulator의 하위가 아니라 파이프라인상 형제 컴포넌트)
+- `main.py`를 루트로 이동 (Generator+Simulator를 엮어 돌리는 실행 스크립트이므로
+  특정 컴포넌트 소속이 아님)
+- `simulator/`, `generator/`를 `__init__.py`가 있는 정식 패키지로 전환, import 경로
+  전부 갱신 (`from simulator.data import ...` 등)
+- 아직 만들지 않은 파이프라인 단계를 위해 `planner/`, `ranking/`, `advisor/` 빈 폴더
+  생성 (architecture-1.md 참고)
+
+### 6. Withdrawal Engine (최소 슬라이스)
 - `simulator/withdrawal.py` - `simulate_withdrawal()`: 배당 재투자 + 리밸런싱은 기존
   `simulate_portfolio`와 동일하게 가져가되, 매년 첫 거래일에 고정 금액
   (초기 자본 × 인출률)을 인출. 잔고가 0 이하가 되면 그 시점부터 0으로 고정(고갈)

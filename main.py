@@ -1,7 +1,7 @@
-from data import fetch_price_data
 from generator import generate_portfolios
-from portfolio import simulate_portfolio
-from metrics import cagr, annual_volatility, max_drawdown
+from simulator.data import fetch_price_data
+from simulator.portfolio import simulate_portfolio
+from simulator.metrics import cagr, annual_volatility, max_drawdown
 
 TICKERS = ["QQQ", "SCHD", "TLT"]
 START = "2012-01-01"

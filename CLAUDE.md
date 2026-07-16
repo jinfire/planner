@@ -1,11 +1,33 @@
 # Coding Rules
 
+## 폴더 구조
+
+architecture-1.md의 파이프라인(`Planner → Generator → Simulator → Ranking → Advisor`)을
+그대로 최상위 폴더로 매핑한다.
+
+```
+retirement-planner/
+├── planner/     # Portfolio Planner (LLM) - 후보 ETF 선정
+├── generator/   # Portfolio Generator - 비중 조합 생성 (재무 계산 없음)
+├── simulator/   # Portfolio Simulator - Historical Backtest, Dividend/Rebalancing/
+│                #   Withdrawal/Inflation/Monte Carlo/Metrics/Retirement Score Engine
+├── ranking/     # Portfolio Ranking - Retirement Score로 정렬
+├── advisor/     # Advisor (LLM) - 결과 설명
+└── main.py      # 전체 파이프라인 실행 (특정 컴포넌트 소속 아님, 루트에 위치)
+```
+
+- 각 파이프라인 단계는 별도 폴더(패키지)로 분리한다. 한 컴포넌트의 코드를 다른
+  컴포넌트 폴더 안에 넣지 않는다 (예: Generator를 simulator/ 안에 넣지 않음).
+- Simulator 내부 엔진(backtest/dividend/rebalance/withdrawal/inflation/monte carlo/
+  metrics/retirement score)은 전부 `simulator/` 패키지 안에 모듈로 존재한다.
+
 ## TDD
 
 - 새 기능(함수/모듈)을 추가하면 항상 그에 대한 테스트 코드도 같이 작성한다.
 - 테스트 프레임워크: pytest
-- 테스트 파일 위치: 소스 파일과 같은 이름으로 `simulator/tests/test_<module>.py`
-  (예: `simulator/generator.py` → `simulator/tests/test_generator.py`)
+- 테스트 파일 위치: 소스 파일과 같은 폴더의 `tests/test_<module>.py`
+  (예: `simulator/data.py` → `simulator/tests/test_data.py`,
+  `generator/generator.py` → `generator/tests/test_generator.py`)
 - 테스트는 yfinance 등 외부 네트워크 호출 없이, 고정된 샘플 데이터(fixture)로 검증한다.
 - 테스트 실행: `pytest` (retirement-planner 루트에서)
 

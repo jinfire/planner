@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from portfolio import simulate_portfolio
+from simulator.portfolio import simulate_portfolio
 
 
 def _make_data(prices: dict, dividends: dict | None = None):

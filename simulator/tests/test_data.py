@@ -1,7 +1,7 @@
 import pandas as pd
 
-import data as data_module
-from data import fetch_price_data
+import simulator.data as data_module
+from simulator.data import fetch_price_data
 
 
 def test_fetch_price_data_splits_and_aligns(monkeypatch):

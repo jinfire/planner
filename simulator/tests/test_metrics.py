@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from metrics import cagr, annual_volatility, max_drawdown
+from simulator.metrics import cagr, annual_volatility, max_drawdown
 
 
 def test_cagr_doubles_in_one_year():

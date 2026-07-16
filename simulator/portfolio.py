@@ -1,6 +1,6 @@
 import pandas as pd
 
-from rebalance import rebalance_dates
+from .rebalance import rebalance_dates
 
 
 def simulate_portfolio(

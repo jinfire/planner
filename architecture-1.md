@@ -120,6 +120,29 @@ Explains:
 -   Risks
 -   Alternative portfolios
 
+## Folder Structure
+
+Each pipeline stage is its own top-level package. No stage's code lives inside
+another stage's folder.
+
+``` text
+retirement-planner/
+├── planner/                # Portfolio Planner (LLM)
+├── generator/               # Portfolio Generator
+│   ├── generator.py
+│   └── tests/
+├── simulator/                # Portfolio Simulator
+│   ├── data.py                # Historical Backtest
+│   ├── portfolio.py           # Dividend Engine + Rebalancing Engine
+│   ├── rebalance.py
+│   ├── withdrawal.py          # Withdrawal Engine
+│   ├── metrics.py             # Metrics Engine
+│   └── tests/
+├── ranking/                  # Portfolio Ranking
+├── advisor/                  # Advisor (LLM)
+└── main.py                   # Wires the pipeline together, owned by no single stage
+```
+
 ## System Philosophy
 
 ### LLM
