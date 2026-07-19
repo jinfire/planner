@@ -125,17 +125,19 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 ### 13. Portfolio Planner (LLM) - 최소 슬라이스
 - `planner/planner.py`
   - `select_candidate_etfs()`: 사용자 입력(추가 납입액/현재 자산/필요 월 소득/
-    자유 요청)을 프롬프트로 만들어 Claude API에 보내고, 응답에서 후보 티커
-    리스트를 뽑아옴. 포트폴리오 비중은 절대 정하지 않음 (architecture-1.md와
-    동일한 제약)
+    자유 요청)을 프롬프트로 만들어 Anthropic Messages API를 **SDK 없이
+    `requests`로 직접 HTTP 호출**, 응답에서 후보 티커 리스트를 뽑아옴.
+    포트폴리오 비중은 절대 정하지 않음 (architecture-1.md와 동일한 제약)
   - `_parse_candidate_etfs()`: LLM 응답 텍스트를 JSON으로 파싱해서 검증하는
     순수 함수로 분리 (네트워크 없이 독립적으로 테스트 가능)
-  - `select_candidate_etfs()`는 `client` 파라미터로 Anthropic 클라이언트를
-    주입받음 (기본값은 실제 클라이언트) - 테스트에서 가짜 클라이언트로
-    교체해서 실제 API 호출 없이 검증
+  - `select_candidate_etfs()`는 `http_client` 파라미터로 `.post()`를 가진
+    객체를 주입받음 (기본값은 `requests` 모듈 자체) - 테스트에서 가짜
+    클라이언트로 교체해서 실제 API 호출 없이 검증. API 키는 `api_key`
+    파라미터 또는 `ANTHROPIC_API_KEY` 환경변수에서 읽음
 - `planner/tests/test_planner.py` - JSON 파싱/빈 리스트/깨진 JSON 검증,
-  가짜 클라이언트로 호출 흐름 검증, 사용자 입력이 프롬프트에 잘 들어가는지 검증
-- `requirements.txt`, `DEPENDENCIES.md` - `anthropic` SDK 추가.
+  가짜 HTTP 클라이언트로 호출 흐름·헤더·프롬프트 내용 검증, HTTP 에러 전파,
+  환경변수에서 API 키를 읽는지 검증
+- `requirements.txt`, `DEPENDENCIES.md` - SDK 대신 `requests` 사용.
   실제 호출에는 `ANTHROPIC_API_KEY` 환경변수가 필요 (이 환경엔 키가 없어서
   아직 실제 LLM 호출로 검증은 못 함 - mock 테스트만 통과한 상태)
 - 아직 `main.py`에 연결 안 함 (API 키 없이도 기존 파이프라인이 계속 돌아가야

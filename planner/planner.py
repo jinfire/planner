@@ -1,8 +1,11 @@
 import json
+import os
 
-import anthropic
+import requests
 
 MODEL = "claude-sonnet-5"
+API_URL = "https://api.anthropic.com/v1/messages"
+API_VERSION = "2023-06-01"
 
 SYSTEM_PROMPT = """You are the Portfolio Planner for a retirement investment system.
 
@@ -21,11 +24,17 @@ def select_candidate_etfs(
     current_assets: float,
     required_monthly_income: float,
     free_form_request: str = "",
-    client: anthropic.Anthropic | None = None,
+    api_key: str | None = None,
+    http_client=requests,
 ) -> list[str]:
     """Ask the LLM to select candidate ETF tickers for the given retirement
-    situation. Does not determine portfolio weights - see architecture-1.md."""
-    client = client or anthropic.Anthropic()
+    situation, calling the Anthropic Messages API directly over HTTP (no SDK).
+    Does not determine portfolio weights - see architecture-1.md.
+
+    `http_client` just needs a `.post(url, headers=, json=)` method returning an
+    object with `.raise_for_status()` and `.json()` - defaults to the `requests`
+    module itself, but tests inject a fake to avoid a real network call."""
+    api_key = api_key or os.environ["ANTHROPIC_API_KEY"]
 
     user_message = (
         f"Additional monthly contribution: {additional_contribution}\n"
@@ -34,14 +43,23 @@ def select_candidate_etfs(
         f"Free-form request: {free_form_request or '(none)'}"
     )
 
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+    response = http_client.post(
+        API_URL,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": API_VERSION,
+            "content-type": "application/json",
+        },
+        json={
+            "model": MODEL,
+            "max_tokens": 1024,
+            "system": SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": user_message}],
+        },
     )
+    response.raise_for_status()
 
-    return _parse_candidate_etfs(response.content[0].text)
+    return _parse_candidate_etfs(response.json()["content"][0]["text"])
 
 
 def _parse_candidate_etfs(text: str) -> list[str]:
