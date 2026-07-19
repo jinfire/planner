@@ -2,14 +2,16 @@ import pandas as pd
 
 from generator import generate_portfolios
 from ranking import rank_portfolios
+from simulator.cpi import fetch_cpi
 from simulator.data import fetch_price_data
 from simulator.metrics import annual_volatility, cagr, max_drawdown
 from simulator.monte_carlo import annual_returns, simulate_paths, survival_probability
 from simulator.portfolio import simulate_portfolio
 from simulator.retirement_score import retirement_score
+from simulator.withdrawal import simulate_withdrawal
 
-TICKERS = ["QQQ", "SCHD", "TLT"]
-START = "2012-01-01"
+TICKERS = ["QQQ", "QLD"]
+START = "2000-01-01"
 END = "2024-12-31"
 REBALANCE_FREQ = "annual"
 WITHDRAWAL_RATE = 0.04
@@ -22,6 +24,7 @@ RESULTS_CSV = "results.csv"
 
 def main():
     close, dividends = fetch_price_data(TICKERS, START, END)
+    cpi = fetch_cpi(START, END)
     portfolios = generate_portfolios(TICKERS, step=10)
     print(f"Generated {len(portfolios)} portfolios from {TICKERS}\n")
 
@@ -31,16 +34,27 @@ def main():
         portfolio_cagr = cagr(value)
         portfolio_mdd = max_drawdown(value)
 
-        returns = annual_returns(value)
-        final_values = simulate_paths(
-            returns,
-            years=RETIREMENT_YEARS,
-            withdrawal_rate=WITHDRAWAL_RATE,
-            inflation_rate=ASSUMED_INFLATION_RATE,
-            num_simulations=NUM_SIMULATIONS,
-            seed=SEED,
+        # Baseline: would this portfolio have actually survived, withdrawing through
+        # the real historical sequence of returns and inflation? Monte Carlo (below)
+        # is only worth running for portfolios that clear this bar first.
+        withdrawal_value = simulate_withdrawal(
+            close, dividends, weights, withdrawal_rate=WITHDRAWAL_RATE, rebalance_freq=REBALANCE_FREQ, cpi=cpi
         )
-        survival = survival_probability(final_values)
+        historical_survived = withdrawal_value.iloc[-1] > 0
+
+        if historical_survived:
+            returns = annual_returns(value)
+            final_values = simulate_paths(
+                returns,
+                years=RETIREMENT_YEARS,
+                withdrawal_rate=WITHDRAWAL_RATE,
+                inflation_rate=ASSUMED_INFLATION_RATE,
+                num_simulations=NUM_SIMULATIONS,
+                seed=SEED,
+            )
+            survival = survival_probability(final_values)
+        else:
+            survival = 0.0
 
         results.append(
             {
@@ -48,6 +62,7 @@ def main():
                 "cagr": portfolio_cagr,
                 "volatility": annual_volatility(value),
                 "mdd": portfolio_mdd,
+                "historical_survived": historical_survived,
                 "survival_probability": survival,
                 "retirement_score": retirement_score(survival, portfolio_cagr, portfolio_mdd),
             }
@@ -63,7 +78,8 @@ def main():
     for r in ranked[:5]:
         print(
             f"  {r['weights']}  Score={r['retirement_score']:.1f}  "
-            f"Survival={r['survival_probability']:.1%}  CAGR={r['cagr']:.2%}  MDD={r['mdd']:.2%}"
+            f"HistSurvived={r['historical_survived']}  Survival={r['survival_probability']:.1%}  "
+            f"CAGR={r['cagr']:.2%}  MDD={r['mdd']:.2%}"
         )
 
 
