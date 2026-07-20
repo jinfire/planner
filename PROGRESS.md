@@ -225,6 +225,67 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
     단순 인출 공식(`simulate_paths`)으로는 안 됨. 지금은 실제 역사 기준
     생존 여부만(0.0/1.0) 보고함
 
+### 17. 인출 전략 파일/함수명 정리 (용어 혼동 방지)
+- 은퇴설계 업계에서 "가드레일(Guardrails)"은 원래 Guyton-Klinger 방식(인출률이
+  상/하한선을 넘으면 인출**액** 자체를 올리고 내리는 전략)을 가리키는 용어인데,
+  16번에서 만든 건 정확히는 "**버킷 전략**"(자산을 성장/보존/현금으로 나눠서
+  어디서 팔지 정하는 것)이라 이름이 겹쳐서 혼동될 수 있었음
+- `simulator/guardrail.py` → `simulator/bucket_strategy.py`,
+  `simulate_guardrail_withdrawal()` → `simulate_bucket_withdrawal()`로 변경
+- `simulator/withdrawal.py` → `simulator/constant_withdrawal.py`,
+  `simulate_withdrawal()` → `simulate_constant_withdrawal()`로 변경 (이것도
+  "Constant Dollar" 인출 전략이라는 걸 이름에서 바로 알 수 있게)
+- 테스트 파일도 `test_bucket_strategy.py`, `test_constant_withdrawal.py`로 함께
+  변경, `main.py`의 `GUARDRAIL_*` 상수도 `BUCKET_*`로, `WITHDRAWAL_STRATEGY`
+  값도 `"guardrail"` → `"bucket"`으로 변경
+- (참고) 결과 딕셔너리의 `guardrail_failures` 키 자체는 그대로 둠 - "버킷
+  전략 안의 가드레일 규칙이 막지 못한 경우"라는 의미라 이름 충돌이 아님
+
+### 18. 인출 전략에 Strategy 패턴 적용 - 하나만 고르거나 전부 다 비교
+- 문제의식: "전략을 하나 고를지, 전부 다 해볼지"는 결국 둘 다 "같은 인터페이스를
+  가진 전략 객체들을 순회"하는 문제라, `main.py`의 if/elif 분기 대신 공통
+  인터페이스로 통일하면 둘 다 자연히 해결됨 (Strategy 패턴)
+- `simulator/strategy.py` (신규)
+  - `WithdrawalResult` (dataclass) - 모든 전략이 공통으로 반환하는 표준 결과.
+    처음엔 `growth_value`(무인출 성장)/`withdrawal_value`(인출 반영)로 나눴는데,
+    버킷 전략엔 "무인출 성장"이라는 개념 자체가 없어서(첫날부터 인출 로직이
+    주식 수 계산에 얽혀있음) 결국 같은 시리즈를 두 필드에 억지로 채워넣는
+    상황이 됐음. **은퇴설계에서 진짜 중요한 건 "실제로 인출하며 산 잔고"
+    하나뿐**이라는 결론을 내리고, `value`(실제 인출 반영 잔고 - CAGR/MDD/생존
+    여부의 유일한 기준) 하나로 단순화. Monte Carlo용 순수 성장 수익률은
+    `monte_carlo_returns`(선택값, 없으면 `None`)로 분리해서 "이 전략은 확률
+    계산을 못 한다"는 게 코드에서 정직하게 드러나게 함
+  - `ConstantWithdrawalStrategy` - `value`는 `simulate_constant_withdrawal`
+    결과, `monte_carlo_returns`는 `simulate_portfolio`(무인출) 결과
+  - `BucketWithdrawalStrategy` - `value`만 있고 `monte_carlo_returns=None`
+    (버킷 상태머신을 경로마다 재현 못 해서 아직 Monte Carlo 지원 안 됨)
+  - `simulator/tests/test_strategy.py` - 각 전략의 label/value/
+    monte_carlo_returns가 올바른지, guardrail_failures가 extra에 담기는지 검증
+- `main.py` - `WITHDRAWAL_STRATEGY`를 `"flat"` / `"bucket"` / **`"all"`**(둘 다
+  돌려서 한 리스트로 같이 랭킹) 중 하나로 설정. 전략별 특수 처리(if/elif)는
+  전부 사라지고, `evaluate(strategy.simulate(...))`를 순회하는 한 가지 경로로
+  통일됨. `required_tickers()`로 활성화된 전략들이 필요로 하는 티커를 합쳐서
+  fetch - 어느 조합이든 데이터 누락 없이 동작
+- CAGR/MDD를 `growth_value`(순수 성장) 대신 `value`(실제 인출 경로) 기준으로
+  바꾸면서 부작용 발견: 잔고가 정확히 0으로 고갈되는 순간 CAGR/MDD 공식이
+  항상 -100%/-100%가 나와서, **고갈된 포트폴리오끼리는 원래 자산 품질과
+  무관하게 전부 점수가 똑같아짐** (예: QQQ 100%도 QLD 100%도 똑같이 최하위) →
+  19번에서 해결
+
+### 19. 고갈된 포트폴리오끼리도 "얼마나 오래 버텼는지"로 순위 매기기
+- `simulator/metrics.py` - `years_survived()`: 잔고가 0을 찍기 전까지 버틴
+  기간이 전체 백테스트 기간의 몇 %인지 반환 (한 번도 고갈 안 하면 1.0)
+- `simulator/retirement_score.py` - `retirement_score()`에 `survival_fraction`
+  파라미터(기본 1.0) 추가, 가중치는 10(`longevity_weight`)으로 일부러 작게 잡음
+  - 실제로 생존한 포트폴리오의 순위는 절대 못 뒤집음 (survival_probability
+    가중치 100에 비해 10은 미미함) - 오직 "이미 똑같이 실패한 것들" 사이에서만
+    타이브레이커로 작동
+- `main.py` - `evaluate()`가 `years_survived(result.value)`를 계산해서
+  `retirement_score()`에 넘김, 결과 딕셔너리에 `years_survived` 필드도 추가
+- 실측: QQQ/QLD 2000~2024, flat 전략 11개 전부 고갈이지만 이제 점수가
+  -146.4 ~ -147.6로 세분화됨 - QQQ 100%(제일 오래 버팀)가 실패 그룹 중 1위,
+  QLD 비중이 높을수록 더 일찍 고갈돼서 순위가 낮아짐
+
 ## 아직 안 한 것 (지금 상태의 한계)
 
 - Portfolio Planner를 실제 API 키로 검증 (지금은 mock 테스트만 통과)
@@ -232,10 +293,16 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 - Advisor (LLM) - 결과 설명
 - 채권류(TLT 등) 과거 데이터 확장 - Shiller 월별 데이터 연동은 보류 (지금 우선순위
   아님)
-- 가드레일 전략에 Monte Carlo 연결 (버킷 상태머신을 경로마다 재현해야 함)
+- 버킷 전략에 Monte Carlo 연결 (버킷 상태머신을 경로마다 재현해야 함) - 지금은
+  Monte Carlo 없이 역사적 생존 여부(binary)만으로 점수 매김
+- 다른 인출 전략들 (Constant Percentage, Guyton-Klinger Guardrails, Floor-and-Upside,
+  VPW, Endowment 스무딩 등) - 아직 설계만 논의, 구현은 안 함
+- 전략을 사용자가 고르는 게 아니라, architecture-1.md 의도대로 모든 전략을 자동
+  비교해서 Retirement Score로 랭킹하는 구조로 바꾸는 것 (지금은 `main.py`에
+  개발자가 상수로 하드코딩)
 
 ## 다음 후보
 
 1. Advisor (LLM) - 1위 포트폴리오가 선정된 이유, 강점/약점/리스크/대안 설명
 2. Planner를 실제 API 키로 검증 후 main.py에 연결
-3. 가드레일 전략용 Monte Carlo 엔진
+3. 버킷 전략용 Monte Carlo 엔진
