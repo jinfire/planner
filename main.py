@@ -4,15 +4,12 @@ from generator import generate_portfolios
 from ranking import rank_portfolios
 from simulator.cpi import fetch_cpi
 from simulator.data import fetch_price_data
-from simulator.guardrail import simulate_guardrail_withdrawal
-from simulator.metrics import annual_volatility, cagr, max_drawdown
+from simulator.metrics import annual_volatility, cagr, max_drawdown, years_survived
 from simulator.monte_carlo import annual_returns, simulate_paths, survival_probability
-from simulator.portfolio import simulate_portfolio
 from simulator.retirement_score import retirement_score
-from simulator.withdrawal import simulate_withdrawal
+from simulator.strategy import BucketWithdrawalStrategy, ConstantWithdrawalStrategy, WithdrawalResult
 
-# "flat": fixed-rate proportional withdrawal across a swept set of ticker weights.
-# "guardrail": QQQ/QLD/cash bucket strategy, swept across candidate cash buffer sizes.
+# "flat", "bucket", or "all" (run every strategy below and rank them together)
 WITHDRAWAL_STRATEGY = "flat"
 
 TICKERS = ["QQQ", "QLD"]
@@ -26,23 +23,68 @@ NUM_SIMULATIONS = 200
 SEED = 42
 RESULTS_CSV = "results.csv"
 
-# guardrail-strategy-only config
-GUARDRAIL_GROWTH_TICKER = "QQQ"
-GUARDRAIL_RESERVE_TICKER = "QLD"
-GUARDRAIL_RESERVE_WEIGHT = 0.10
-GUARDRAIL_CASH_YEARS_OPTIONS = list(range(1, 11))
-GUARDRAIL_DOWN_THRESHOLD = 0.0  # a "down year" = the growth ticker's own return < this
+# bucket-strategy-only config
+BUCKET_GROWTH_TICKER = "QQQ"
+BUCKET_RESERVE_TICKER = "QLD"
+BUCKET_RESERVE_WEIGHT = 0.10
+BUCKET_CASH_YEARS_OPTIONS = list(range(1, 11))
+BUCKET_DOWN_THRESHOLD = 0.0  # a "down year" = the growth ticker's own return < this
 
 
-def _evaluate_with_monte_carlo(value: pd.Series, withdrawal_value: pd.Series) -> dict:
-    """Shared scoring: real-CPI historical survival gates whether Monte Carlo (future,
-    assumed-inflation) is worth running at all."""
-    portfolio_cagr = cagr(value)
-    portfolio_mdd = max_drawdown(value)
-    historical_survived = withdrawal_value.iloc[-1] > 0
+def build_flat_strategies() -> list[ConstantWithdrawalStrategy]:
+    return [
+        ConstantWithdrawalStrategy(weights, WITHDRAWAL_RATE, REBALANCE_FREQ)
+        for weights in generate_portfolios(TICKERS, step=10)
+    ]
 
-    if historical_survived:
-        returns = annual_returns(value)
+
+def build_bucket_strategies() -> list[BucketWithdrawalStrategy]:
+    return [
+        BucketWithdrawalStrategy(
+            BUCKET_GROWTH_TICKER,
+            BUCKET_RESERVE_TICKER,
+            BUCKET_RESERVE_WEIGHT,
+            WITHDRAWAL_RATE,
+            cash_years,
+            BUCKET_DOWN_THRESHOLD,
+        )
+        for cash_years in BUCKET_CASH_YEARS_OPTIONS
+    ]
+
+
+STRATEGY_BUILDERS = {"flat": build_flat_strategies, "bucket": build_bucket_strategies}
+
+
+def build_strategies() -> list:
+    if WITHDRAWAL_STRATEGY == "all":
+        return [strategy for builder in STRATEGY_BUILDERS.values() for strategy in builder()]
+    if WITHDRAWAL_STRATEGY not in STRATEGY_BUILDERS:
+        raise ValueError(f"unknown WITHDRAWAL_STRATEGY: {WITHDRAWAL_STRATEGY!r}")
+    return STRATEGY_BUILDERS[WITHDRAWAL_STRATEGY]()
+
+
+def required_tickers() -> list[str]:
+    """Union of every ticker any active strategy needs, so fetch_price_data always
+    covers whichever strategy/strategies WITHDRAWAL_STRATEGY selects."""
+    tickers = set(TICKERS)
+    if WITHDRAWAL_STRATEGY in ("bucket", "all"):
+        tickers |= {BUCKET_GROWTH_TICKER, BUCKET_RESERVE_TICKER}
+    return sorted(tickers)
+
+
+def evaluate(result: WithdrawalResult) -> dict:
+    """CAGR/MDD/survival are all judged from `result.value` - the balance a retiree
+    would actually see - so every strategy is scored on the same footing regardless of
+    how differently it's shaped internally. Monte Carlo only runs for strategies that
+    can supply a pure-growth return series to bootstrap from; the rest fall back to a
+    binary survived/not-survived score."""
+    portfolio_cagr = cagr(result.value)
+    portfolio_mdd = max_drawdown(result.value)
+    survival_fraction = years_survived(result.value)
+    historical_survived = result.value.iloc[-1] > 0
+
+    if historical_survived and result.monte_carlo_returns is not None:
+        returns = annual_returns(result.monte_carlo_returns)
         final_values = simulate_paths(
             returns,
             years=RETIREMENT_YEARS,
@@ -53,87 +95,29 @@ def _evaluate_with_monte_carlo(value: pd.Series, withdrawal_value: pd.Series) ->
         )
         survival = survival_probability(final_values)
     else:
-        survival = 0.0
+        survival = 1.0 if historical_survived else 0.0
 
     return {
+        "weights": result.label,
         "cagr": portfolio_cagr,
-        "volatility": annual_volatility(value),
+        "volatility": annual_volatility(result.value),
         "mdd": portfolio_mdd,
         "historical_survived": historical_survived,
         "survival_probability": survival,
-        "retirement_score": retirement_score(survival, portfolio_cagr, portfolio_mdd),
+        "years_survived": survival_fraction,
+        "retirement_score": retirement_score(survival, portfolio_cagr, portfolio_mdd, survival_fraction),
+        **result.extra,
     }
 
 
-def run_flat_strategy(close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series) -> list[dict]:
-    portfolios = generate_portfolios(TICKERS, step=10)
-    print(f"Generated {len(portfolios)} portfolios from {TICKERS}\n")
-
-    results = []
-    for weights in portfolios:
-        value = simulate_portfolio(close, dividends, weights, rebalance_freq=REBALANCE_FREQ)
-        withdrawal_value = simulate_withdrawal(
-            close, dividends, weights, withdrawal_rate=WITHDRAWAL_RATE, rebalance_freq=REBALANCE_FREQ, cpi=cpi
-        )
-        results.append({"weights": weights, **_evaluate_with_monte_carlo(value, withdrawal_value)})
-    return results
-
-
-def run_guardrail_strategy(close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series) -> list[dict]:
-    print(
-        f"Testing guardrail strategy: growth={GUARDRAIL_GROWTH_TICKER}, "
-        f"reserve={GUARDRAIL_RESERVE_TICKER} ({GUARDRAIL_RESERVE_WEIGHT:.0%}, never sold), "
-        f"cash_years in {GUARDRAIL_CASH_YEARS_OPTIONS}\n"
-    )
-
-    results = []
-    for cash_years in GUARDRAIL_CASH_YEARS_OPTIONS:
-        outcome = simulate_guardrail_withdrawal(
-            close,
-            dividends,
-            GUARDRAIL_GROWTH_TICKER,
-            GUARDRAIL_RESERVE_TICKER,
-            reserve_weight=GUARDRAIL_RESERVE_WEIGHT,
-            withdrawal_rate=WITHDRAWAL_RATE,
-            cash_years=cash_years,
-            down_threshold=GUARDRAIL_DOWN_THRESHOLD,
-            cpi=cpi,
-        )
-        value = outcome["value"]
-        historical_survived = value.iloc[-1] > 0
-        portfolio_cagr = cagr(value)
-        portfolio_mdd = max_drawdown(value)
-        # Monte Carlo isn't wired up for the guardrail engine yet - it would need the
-        # whole bucket state machine replayed per simulated path, not just a formula.
-        # Report the historical-only outcome for now (1.0/0.0 survival, no probability).
-        results.append(
-            {
-                "weights": {"cash_years": cash_years},
-                "cagr": portfolio_cagr,
-                "volatility": annual_volatility(value),
-                "mdd": portfolio_mdd,
-                "historical_survived": historical_survived,
-                "survival_probability": 1.0 if historical_survived else 0.0,
-                "retirement_score": retirement_score(
-                    1.0 if historical_survived else 0.0, portfolio_cagr, portfolio_mdd
-                ),
-                "guardrail_failures": len(outcome["guardrail_failures"]),
-            }
-        )
-    return results
-
-
 def main():
-    close, dividends = fetch_price_data(TICKERS, START, END)
+    close, dividends = fetch_price_data(required_tickers(), START, END)
     cpi = fetch_cpi(START, END)
 
-    if WITHDRAWAL_STRATEGY == "flat":
-        results = run_flat_strategy(close, dividends, cpi)
-    elif WITHDRAWAL_STRATEGY == "guardrail":
-        results = run_guardrail_strategy(close, dividends, cpi)
-    else:
-        raise ValueError(f"unknown WITHDRAWAL_STRATEGY: {WITHDRAWAL_STRATEGY!r}")
+    strategies = build_strategies()
+    print(f"Running {len(strategies)} strategy configuration(s) ({WITHDRAWAL_STRATEGY})\n")
 
+    results = [evaluate(strategy.simulate(close, dividends, cpi)) for strategy in strategies]
     ranked = rank_portfolios(results)
 
     df = pd.DataFrame([{**r["weights"], **{k: v for k, v in r.items() if k != "weights"}} for r in ranked])
