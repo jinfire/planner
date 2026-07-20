@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from simulator.portfolio import simulate_portfolio
-from simulator.withdrawal import simulate_withdrawal
+from simulator.constant_withdrawal import simulate_constant_withdrawal
 
 
 def _make_data(prices: dict):
@@ -16,7 +16,7 @@ def test_withdrawal_taken_on_first_trading_day_of_each_year():
     close, div = _make_data({"A": [10, 10, 10, 10]})
     weights = {"A": 1.0}
 
-    value = simulate_withdrawal(close, div, weights, withdrawal_rate=0.1, initial_capital=1.0)
+    value = simulate_constant_withdrawal(close, div, weights, withdrawal_rate=0.1, initial_capital=1.0)
 
     # year 1: 1.0 - 0.1 = 0.9; year 2: 0.9 - 0.1 = 0.8, flat price in between
     assert value.iloc[0] == pytest.approx(0.9)
@@ -29,7 +29,7 @@ def test_portfolio_depletes_and_stays_at_zero():
     close, div = _make_data({"A": [10, 10, 10, 10]})
     weights = {"A": 1.0}
 
-    value = simulate_withdrawal(close, div, weights, withdrawal_rate=0.5, initial_capital=1.0)
+    value = simulate_constant_withdrawal(close, div, weights, withdrawal_rate=0.5, initial_capital=1.0)
 
     # year 1: 1.0 - 0.5 = 0.5; year 2: 0.5 - 0.5 = 0.0 -> depleted
     assert value.iloc[1] == pytest.approx(0.5)
@@ -41,7 +41,7 @@ def test_inflation_adjusted_withdrawal_grows_each_year():
     close, div = _make_data({"A": [10, 10, 10, 10]})
     weights = {"A": 1.0}
 
-    value = simulate_withdrawal(
+    value = simulate_constant_withdrawal(
         close, div, weights, withdrawal_rate=0.1, initial_capital=1.0, inflation_rate=0.1
     )
 
@@ -57,7 +57,7 @@ def test_cpi_based_withdrawal_tracks_actual_inflation():
     dates = close.index
     cpi = pd.Series([100.0, 106.0], index=[dates[0], dates[2]])
 
-    value = simulate_withdrawal(
+    value = simulate_constant_withdrawal(
         close, div, weights, withdrawal_rate=0.1, initial_capital=1.0, cpi=cpi
     )
 
@@ -71,7 +71,7 @@ def test_zero_withdrawal_rate_matches_plain_rebalanced_portfolio():
     close, div = _make_data({"A": [10, 11, 12, 13], "B": [20, 19, 22, 21]})
     weights = {"A": 0.5, "B": 0.5}
 
-    withdrawn = simulate_withdrawal(close, div, weights, withdrawal_rate=0.0, rebalance_freq="annual")
+    withdrawn = simulate_constant_withdrawal(close, div, weights, withdrawal_rate=0.0, rebalance_freq="annual")
     plain = simulate_portfolio(close, div, weights, rebalance_freq="annual")
 
     pd.testing.assert_series_equal(withdrawn, plain)

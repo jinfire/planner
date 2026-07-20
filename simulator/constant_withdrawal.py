@@ -5,7 +5,7 @@ from .inflation import inflation_adjusted_withdrawal
 from .rebalance import rebalance_dates
 
 
-def simulate_withdrawal(
+def simulate_constant_withdrawal(
     close: pd.DataFrame,
     dividends: pd.DataFrame,
     weights: dict[str, float],

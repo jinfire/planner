@@ -5,7 +5,7 @@ from .inflation import inflation_adjusted_withdrawal
 from .rebalance import rebalance_dates
 
 
-def simulate_guardrail_withdrawal(
+def simulate_bucket_withdrawal(
     close: pd.DataFrame,
     dividends: pd.DataFrame,
     growth_ticker: str,

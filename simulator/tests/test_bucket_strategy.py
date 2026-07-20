@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from simulator.guardrail import simulate_guardrail_withdrawal
+from simulator.bucket_strategy import simulate_bucket_withdrawal
 
 
 def _make_data(growth_prices, reserve_prices, reserve_dividends=None):
@@ -20,7 +20,7 @@ def _make_data(growth_prices, reserve_prices, reserve_dividends=None):
 def test_up_year_funds_withdrawal_from_growth_and_tops_up_cash():
     close, div = _make_data([100, 105, 110, 115], [10, 10, 10, 10])
 
-    result = simulate_guardrail_withdrawal(
+    result = simulate_bucket_withdrawal(
         close, div, "GROWTH", "RESERVE", reserve_weight=0.1, withdrawal_rate=0.04, cash_years=3
     )
 
@@ -36,7 +36,7 @@ def test_up_year_funds_withdrawal_from_growth_and_tops_up_cash():
 def test_down_year_draws_from_cash_and_leaves_growth_untouched():
     close, div = _make_data([100, 95, 90, 85], [10, 10, 10, 10])
 
-    result = simulate_guardrail_withdrawal(
+    result = simulate_bucket_withdrawal(
         close, div, "GROWTH", "RESERVE", reserve_weight=0.1, withdrawal_rate=0.04, cash_years=3
     )
 
@@ -48,7 +48,7 @@ def test_down_year_draws_from_cash_and_leaves_growth_untouched():
 def test_down_year_with_insufficient_cash_sells_growth_and_logs_failure():
     close, div = _make_data([100, 95, 90, 85], [10, 10, 10, 10])
 
-    result = simulate_guardrail_withdrawal(
+    result = simulate_bucket_withdrawal(
         close, div, "GROWTH", "RESERVE", reserve_weight=0.1, withdrawal_rate=0.04, cash_years=0
     )
 
@@ -62,7 +62,7 @@ def test_reserve_ticker_is_never_sold():
         [100, 95, 90, 85], [10, 10, 10, 10], reserve_dividends=[0.0, 0.0, 1.0, 0.0]
     )
 
-    result = simulate_guardrail_withdrawal(
+    result = simulate_bucket_withdrawal(
         close, div, "GROWTH", "RESERVE", reserve_weight=0.1, withdrawal_rate=0.04, cash_years=0
     )
 
@@ -79,10 +79,10 @@ def test_reserve_ticker_is_never_sold():
 def test_cash_bucket_size_scales_with_cash_years():
     close, div = _make_data([100, 100, 100, 100], [10, 10, 10, 10])
 
-    result_3y = simulate_guardrail_withdrawal(
+    result_3y = simulate_bucket_withdrawal(
         close, div, "GROWTH", "RESERVE", reserve_weight=0.1, withdrawal_rate=0.04, cash_years=3
     )
-    result_5y = simulate_guardrail_withdrawal(
+    result_5y = simulate_bucket_withdrawal(
         close, div, "GROWTH", "RESERVE", reserve_weight=0.1, withdrawal_rate=0.04, cash_years=5
     )
 
