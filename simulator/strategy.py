@@ -5,6 +5,7 @@ import pandas as pd
 
 from .bucket_strategy import simulate_bucket_withdrawal
 from .constant_withdrawal import simulate_constant_withdrawal
+from .guyton_klinger import simulate_guyton_klinger_withdrawal
 from .portfolio import simulate_portfolio
 
 
@@ -51,6 +52,44 @@ class ConstantWithdrawalStrategy:
             withdrawal_rate=self.withdrawal_rate,
             rebalance_freq=self.rebalance_freq,
             cpi=cpi,
+        )
+        return WithdrawalResult(
+            label=dict(self.weights), value=withdrawal_value, monte_carlo_returns=growth_value
+        )
+
+
+class GuytonKlingerWithdrawalStrategy:
+    """Fixed weights, but the withdrawal amount itself is adjusted each year by the
+    Guyton-Klinger guardrail rules instead of staying a fixed real amount."""
+
+    def __init__(
+        self,
+        weights: dict[str, float],
+        initial_withdrawal_rate: float,
+        rebalance_freq: str = "annual",
+        upper_guardrail: float = 1.20,
+        lower_guardrail: float = 0.80,
+        adjustment_pct: float = 0.10,
+    ):
+        self.weights = weights
+        self.initial_withdrawal_rate = initial_withdrawal_rate
+        self.rebalance_freq = rebalance_freq
+        self.upper_guardrail = upper_guardrail
+        self.lower_guardrail = lower_guardrail
+        self.adjustment_pct = adjustment_pct
+
+    def simulate(self, close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series | None) -> WithdrawalResult:
+        growth_value = simulate_portfolio(close, dividends, self.weights, rebalance_freq=self.rebalance_freq)
+        withdrawal_value = simulate_guyton_klinger_withdrawal(
+            close,
+            dividends,
+            self.weights,
+            initial_withdrawal_rate=self.initial_withdrawal_rate,
+            rebalance_freq=self.rebalance_freq,
+            cpi=cpi,
+            upper_guardrail=self.upper_guardrail,
+            lower_guardrail=self.lower_guardrail,
+            adjustment_pct=self.adjustment_pct,
         )
         return WithdrawalResult(
             label=dict(self.weights), value=withdrawal_value, monte_carlo_returns=growth_value

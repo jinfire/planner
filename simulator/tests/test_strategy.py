@@ -1,7 +1,11 @@
 import pandas as pd
 import pytest
 
-from simulator.strategy import BucketWithdrawalStrategy, ConstantWithdrawalStrategy
+from simulator.strategy import (
+    BucketWithdrawalStrategy,
+    ConstantWithdrawalStrategy,
+    GuytonKlingerWithdrawalStrategy,
+)
 
 
 def _make_data():
@@ -51,6 +55,34 @@ def test_constant_strategy_supplies_pure_growth_returns_for_monte_carlo():
 
     assert result.monte_carlo_returns is not None
     # monte_carlo_returns ignores withdrawal_rate entirely - pure buy-and-hold
+    assert result.monte_carlo_returns.iloc[-1] == pytest.approx(13 / 10)
+
+
+def test_guyton_klinger_strategy_label_matches_its_weights():
+    strategy = GuytonKlingerWithdrawalStrategy({"A": 0.6, "B": 0.4}, initial_withdrawal_rate=0.04)
+    close, div = _make_data()
+
+    result = strategy.simulate(close, div, cpi=None)
+
+    assert result.label == {"A": 0.6, "B": 0.4}
+
+
+def test_guyton_klinger_strategy_value_reflects_the_actual_withdrawal_path():
+    strategy = GuytonKlingerWithdrawalStrategy({"A": 1.0}, initial_withdrawal_rate=0.5)
+    close, div = _make_data()
+
+    result = strategy.simulate(close, div, cpi=None)
+
+    assert result.value.iloc[-1] != pytest.approx(13 / 10)
+
+
+def test_guyton_klinger_strategy_supplies_pure_growth_returns_for_monte_carlo():
+    strategy = GuytonKlingerWithdrawalStrategy({"A": 1.0}, initial_withdrawal_rate=0.04)
+    close, div = _make_data()
+
+    result = strategy.simulate(close, div, cpi=None)
+
+    assert result.monte_carlo_returns is not None
     assert result.monte_carlo_returns.iloc[-1] == pytest.approx(13 / 10)
 
 

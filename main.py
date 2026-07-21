@@ -7,9 +7,14 @@ from simulator.data import fetch_price_data
 from simulator.metrics import annual_volatility, cagr, max_drawdown, years_survived
 from simulator.monte_carlo import annual_returns, simulate_paths, survival_probability
 from simulator.retirement_score import retirement_score
-from simulator.strategy import BucketWithdrawalStrategy, ConstantWithdrawalStrategy, WithdrawalResult
+from simulator.strategy import (
+    BucketWithdrawalStrategy,
+    ConstantWithdrawalStrategy,
+    GuytonKlingerWithdrawalStrategy,
+    WithdrawalResult,
+)
 
-# "flat", "bucket", or "all" (run every strategy below and rank them together)
+# "flat", "bucket", "guyton_klinger", or "all" (run every strategy below and rank them together)
 WITHDRAWAL_STRATEGY = "flat"
 
 TICKERS = ["SPY", "QQQ", "QLD", "TLT", "IEF", "SGOV"]
@@ -39,6 +44,13 @@ def build_flat_strategies() -> list[ConstantWithdrawalStrategy]:
     ]
 
 
+def build_guyton_klinger_strategies() -> list[GuytonKlingerWithdrawalStrategy]:
+    return [
+        GuytonKlingerWithdrawalStrategy(weights, WITHDRAWAL_RATE, REBALANCE_FREQ)
+        for weights in generate_portfolios(TICKERS, step=GENERATOR_STEP)
+    ]
+
+
 def build_bucket_strategies() -> list[BucketWithdrawalStrategy]:
     return [
         BucketWithdrawalStrategy(
@@ -53,7 +65,11 @@ def build_bucket_strategies() -> list[BucketWithdrawalStrategy]:
     ]
 
 
-STRATEGY_BUILDERS = {"flat": build_flat_strategies, "bucket": build_bucket_strategies}
+STRATEGY_BUILDERS = {
+    "flat": build_flat_strategies,
+    "guyton_klinger": build_guyton_klinger_strategies,
+    "bucket": build_bucket_strategies,
+}
 
 
 def build_strategies() -> list:
