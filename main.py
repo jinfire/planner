@@ -12,7 +12,8 @@ from simulator.strategy import BucketWithdrawalStrategy, ConstantWithdrawalStrat
 # "flat", "bucket", or "all" (run every strategy below and rank them together)
 WITHDRAWAL_STRATEGY = "flat"
 
-TICKERS = ["QQQ", "QLD"]
+TICKERS = ["SPY", "QQQ", "QLD", "TLT", "IEF", "SGOV"]
+GENERATOR_STEP = 20  # % increments between candidate weights
 START = "2000-01-01"
 END = "2024-12-31"
 REBALANCE_FREQ = "quarterly"
@@ -34,7 +35,7 @@ BUCKET_DOWN_THRESHOLD = 0.0  # a "down year" = the growth ticker's own return < 
 def build_flat_strategies() -> list[ConstantWithdrawalStrategy]:
     return [
         ConstantWithdrawalStrategy(weights, WITHDRAWAL_RATE, REBALANCE_FREQ)
-        for weights in generate_portfolios(TICKERS, step=10)
+        for weights in generate_portfolios(TICKERS, step=GENERATOR_STEP)
     ]
 
 
@@ -81,7 +82,8 @@ def evaluate(result: WithdrawalResult) -> dict:
     portfolio_cagr = cagr(result.value)
     portfolio_mdd = max_drawdown(result.value)
     survival_fraction = years_survived(result.value)
-    historical_survived = result.value.iloc[-1] > 0
+    final_value = result.value.iloc[-1]
+    historical_survived = final_value > 0
 
     if historical_survived and result.monte_carlo_returns is not None:
         returns = annual_returns(result.monte_carlo_returns)
@@ -105,6 +107,8 @@ def evaluate(result: WithdrawalResult) -> dict:
         "historical_survived": historical_survived,
         "survival_probability": survival,
         "years_survived": survival_fraction,
+        "final_value": final_value,
+        "total_return_pct": (final_value - 1) * 100,
         "retirement_score": retirement_score(survival, portfolio_cagr, portfolio_mdd, survival_fraction),
         **result.extra,
     }
@@ -129,7 +133,8 @@ def main():
         print(
             f"  {r['weights']}  Score={r['retirement_score']:.1f}  "
             f"HistSurvived={r['historical_survived']}  Survival={r['survival_probability']:.1%}  "
-            f"CAGR={r['cagr']:.2%}  MDD={r['mdd']:.2%}"
+            f"CAGR={r['cagr']:.2%}  MDD={r['mdd']:.2%}  "
+            f"TotalReturn={r['total_return_pct']:.1f}%  FinalValue={r['final_value']:.3f}x"
         )
 
 
