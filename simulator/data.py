@@ -4,14 +4,16 @@ import yfinance as yf
 import pandas as pd
 
 from .backfill import extend_close_series, reaches_start
+from .fred_data import fetch_fred_series
 
 
 def fetch_price_data(tickers: list[str], start: str, end: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Returns (close_prices, dividends_per_share), unadjusted, aligned on the same date
     index. A ticker whose real data doesn't reach `start` is backfilled via
-    simulator.backfill (leverage replication, then index proxy, then a similar older
-    fund - whichever applies first); if none apply, it's left truncated to its real
-    start and a warning is raised."""
+    simulator.backfill (leverage replication, then FRED-yield-based bond/T-bill
+    replication, then an index/futures proxy, then a similar older fund - whichever
+    applies first); if none apply, it's left truncated to its real start and a warning
+    is raised."""
     raw = yf.download(tickers, start=start, end=end, auto_adjust=False, actions=True)
     close = raw["Close"]
     dividends = raw["Dividends"]
@@ -28,11 +30,15 @@ def fetch_price_data(tickers: list[str], start: str, end: str) -> tuple[pd.DataF
             other_close = other_close[other_ticker]
         return other_close.dropna()
 
+    def fetch_fred(series_id: str):
+        series = fetch_fred_series(series_id, start, end)
+        return series if not series.empty else None
+
     extended = {}
     for ticker in tickers:
         series = close[ticker].dropna()
         if not reaches_start(series, start_ts):
-            series = extend_close_series(ticker, start_ts, series, fetch_close)
+            series = extend_close_series(ticker, start_ts, series, fetch_close, fetch_fred)
             if not reaches_start(series, start_ts):
                 warnings.warn(
                     f"No historical extension available for {ticker}; "
