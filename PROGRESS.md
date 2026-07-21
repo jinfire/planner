@@ -286,13 +286,53 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
   -146.4 ~ -147.6로 세분화됨 - QQQ 100%(제일 오래 버팀)가 실패 그룹 중 1위,
   QLD 비중이 높을수록 더 일찍 고갈돼서 순위가 낮아짐
 
+### 20. Backfill 확장 - "고전적 자산배분(60/40, 3-Fund 등)"용 12개 자산 지원
+- 사용자가 공유한 설계 문서(Classic Portfolio Backtest Data Strategy) 기준으로
+  MVP 자산 12개(대형주/성장주/전체주식/배당성장/배당귀족/선진국/신흥국/장기국채/
+  중기국채/종합채권/단기채/금)를 2000년부터 끊김 없이 백테스트 가능하게 확장
+- 자산군마다 "그 ETF가 실제로 추종하는 지수"를 프록시로 쓰는 게 이상적인데,
+  MSCI/Dow Jones/S&P/Bloomberg 지수 원자료는 대부분 유료라 무료로는 못 구함.
+  **진짜 무료로 정확하게 되는 것과, 근사치로만 되는 것을 구분**해서 처리:
+  - **진짜로 정확한 것 (신규 방법)**:
+    - `simulator/fred_data.py` (신규) - `fetch_fred_series()`: FRED 아무 시리즈나
+      API 키 없이 CSV로 fetch (기존 `cpi.py`와 같은 패턴을 재사용 가능하게 일반화)
+    - `simulator/backfill.py`
+      - `replicate_from_treasury_yield()`: FRED 국채 수익률(예: DGS20)로 채권
+        ETF 가격을 역산. 공식: `일일수익률 ≈ -듀레이션 × 수익률변화분 + 수익률/365(캐리)`.
+        TLT(듀레이션 17년 가정, DGS20)/IEF(듀레이션 7.5년 가정, DGS10) 둘 다
+        **2000년까지 완전히 채워짐** (FRED가 1962년부터 있어서)
+      - `replicate_from_tbill_yield()`: FRED 3개월 T-Bill 수익률(DTB3)로 단순
+        일일 복리만 반영(듀레이션 거의 0이라 수익률 변동 항은 무시). SGOV/BIL도
+        **2000년까지 완전히 채워짐** (DTB3가 1954년부터 있어서)
+      - `INDEX_PROXY`에 `"GLD": "GC=F"`(금 선물) 추가 - FRED엔 더 이상 금 시세
+        시리즈가 없어서, 야후파이낸스의 금 선물 티커로 대체 (2000-08부터, 완전한
+        2000년 커버는 아니지만 개선됨)
+  - **근사치로만 되는 것 (기존 스플라이싱 방법 확장)**: `SPLICE_PROXY`에 추가
+    - VTI → SPY (1993~, 소형주 차이는 있지만 둘 다 미국 전체 시장)
+    - NOBL → DVY (2003-11~, 둘 다 배당 중심 ETF)
+    - VEA → EFA (2001-08~, **둘 다 MSCI EAFE 추종이라 근사 정확도 높음**)
+    - VWO → EEM (2003-04~, **둘 다 MSCI EM 추종이라 근사 정확도 높음**)
+    - BND → AGG (2003-09~, 둘 다 Bloomberg US Aggregate Bond 추종)
+  - **여전히 안 되는 것**: DBC(원자재) - 2006년 이전 무료로 구할 수 있는 광범위
+    원자재 지수 프록시가 없어서 정직하게 2006-02부터로 남김
+  - `extend_close_series()`가 이제 5단계 우선순위로 확장됨: 레버리지 복제 →
+    국채 수익률 역산 → T-Bill 수익률 역산 → 지수/선물 프록시 → 유사 펀드
+    스플라이싱. `fetch_fred` 콜백을 새로 받아서(없으면 FRED 관련 두 단계는
+    자동 스킵) `simulator/data.py`의 `fetch_price_data()`가 실제로 연결
+  - `simulator/tests/test_fred_data.py`, `simulator/tests/test_backfill.py` -
+    두 역산 공식(평평한 수익률=순수 캐리, 수익률 상승=손실 방향인지), 우선순위
+    순서, `fetch_fred` 없을 때 자동 스킵되는지 검증
+  - 실측(TLT+SGOV, 2000~2024): 경고 없이 **2000-01-03부터 완전히 채워짐**
+    (6253거래일). 핸드오프 지점(TLT 2002-07-29, SGOV 2020-05-29)도 값이
+    자연스럽게 이어짐 확인. VEA/NOBL/VWO/BND는 각각 EFA/DVY/EEM/AGG 상장일까지만
+    개선(2000년 완전 커버는 아님), DBC는 그대로 2006-02
+
 ## 아직 안 한 것 (지금 상태의 한계)
 
 - Portfolio Planner를 실제 API 키로 검증 (지금은 mock 테스트만 통과)
 - Portfolio Planner를 main.py에 연결
 - Advisor (LLM) - 결과 설명
-- 채권류(TLT 등) 과거 데이터 확장 - Shiller 월별 데이터 연동은 보류 (지금 우선순위
-  아님)
+- DBC(원자재) 2006년 이전 데이터 - 무료로 구할 수 있는 프록시가 없어서 보류
 - 버킷 전략에 Monte Carlo 연결 (버킷 상태머신을 경로마다 재현해야 함) - 지금은
   Monte Carlo 없이 역사적 생존 여부(binary)만으로 점수 매김
 - 다른 인출 전략들 (Constant Percentage, Guyton-Klinger Guardrails, Floor-and-Upside,
@@ -300,9 +340,13 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 - 전략을 사용자가 고르는 게 아니라, architecture-1.md 의도대로 모든 전략을 자동
   비교해서 Retirement Score로 랭킹하는 구조로 바꾸는 것 (지금은 `main.py`에
   개발자가 상수로 하드코딩)
+- 새로 지원한 12개 자산으로 실제 60/40, 3-Fund, All Weather 같은 고전적
+  자산배분 전략을 `main.py`에서 돌려보는 것 (지금은 backfill 기능만 검증됨,
+  포트폴리오 조합으로는 아직 안 써봄)
 
 ## 다음 후보
 
 1. Advisor (LLM) - 1위 포트폴리오가 선정된 이유, 강점/약점/리스크/대안 설명
 2. Planner를 실제 API 키로 검증 후 main.py에 연결
 3. 버킷 전략용 Monte Carlo 엔진
+4. 새 12개 자산으로 고전적 자산배분 전략(60/40 등) 백테스트 돌려보기
