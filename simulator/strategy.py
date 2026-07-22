@@ -32,6 +32,8 @@ class WithdrawalResult:
 
 
 class WithdrawalStrategy(Protocol):
+    tickers: list[str]
+
     def simulate(self, close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series | None) -> WithdrawalResult: ...
 
 
@@ -39,16 +41,20 @@ class ConstantWithdrawalStrategy:
     """Fixed-rate proportional withdrawal across a fixed set of ticker weights."""
 
     def __init__(self, weights: dict[str, float], withdrawal_rate: float, rebalance_freq: str = "annual"):
-        self.weights = weights
+        self.weights = weights  # kept as-given (incl. zero-weight tickers) for display
         self.withdrawal_rate = withdrawal_rate
         self.rebalance_freq = rebalance_freq
+        # zero-weight tickers contribute nothing and shouldn't force data-fetching to
+        # cover them - see simulator.data.fetch_extended_series/intersect_tickers
+        self.tickers = [t for t, w in weights.items() if w > 0]
 
     def simulate(self, close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series | None) -> WithdrawalResult:
-        growth_value = simulate_portfolio(close, dividends, self.weights, rebalance_freq=self.rebalance_freq)
+        active_weights = {t: self.weights[t] for t in self.tickers}
+        growth_value = simulate_portfolio(close, dividends, active_weights, rebalance_freq=self.rebalance_freq)
         withdrawal_value = simulate_constant_withdrawal(
             close,
             dividends,
-            self.weights,
+            active_weights,
             withdrawal_rate=self.withdrawal_rate,
             rebalance_freq=self.rebalance_freq,
             cpi=cpi,
@@ -71,19 +77,21 @@ class GuytonKlingerWithdrawalStrategy:
         lower_guardrail: float = 0.80,
         adjustment_pct: float = 0.10,
     ):
-        self.weights = weights
+        self.weights = weights  # kept as-given (incl. zero-weight tickers) for display
         self.initial_withdrawal_rate = initial_withdrawal_rate
         self.rebalance_freq = rebalance_freq
         self.upper_guardrail = upper_guardrail
         self.lower_guardrail = lower_guardrail
         self.adjustment_pct = adjustment_pct
+        self.tickers = [t for t, w in weights.items() if w > 0]
 
     def simulate(self, close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series | None) -> WithdrawalResult:
-        growth_value = simulate_portfolio(close, dividends, self.weights, rebalance_freq=self.rebalance_freq)
+        active_weights = {t: self.weights[t] for t in self.tickers}
+        growth_value = simulate_portfolio(close, dividends, active_weights, rebalance_freq=self.rebalance_freq)
         withdrawal_value = simulate_guyton_klinger_withdrawal(
             close,
             dividends,
-            self.weights,
+            active_weights,
             initial_withdrawal_rate=self.initial_withdrawal_rate,
             rebalance_freq=self.rebalance_freq,
             cpi=cpi,
@@ -115,6 +123,7 @@ class BucketWithdrawalStrategy:
         self.withdrawal_rate = withdrawal_rate
         self.cash_years = cash_years
         self.down_threshold = down_threshold
+        self.tickers = [growth_ticker, reserve_ticker]
 
     def simulate(self, close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series | None) -> WithdrawalResult:
         outcome = simulate_bucket_withdrawal(

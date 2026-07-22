@@ -1,7 +1,7 @@
 import pandas as pd
 
 import simulator.data as data_module
-from simulator.data import fetch_price_data
+from simulator.data import fetch_extended_series, fetch_price_data, intersect_tickers
 
 
 def test_fetch_price_data_splits_and_aligns(monkeypatch):
@@ -48,3 +48,25 @@ def test_fetch_price_data_recursively_extends_a_backfill_base_ticker(monkeypatch
     # reaches back near 2000 (via QQQ's own ^NDX extension), not stuck at QQQ's
     # truncated real start (2010) or QLD's own real start (2015)
     assert close.index.min() <= pd.Timestamp("2000-01-13")
+
+
+def test_different_ticker_subsets_get_different_usable_ranges(monkeypatch):
+    # LONG has data the whole requested span; SHORT only shows up partway through
+    # (no backfill mapping for either, so each just keeps its own real range).
+    dates = pd.date_range("2000-01-01", periods=5)
+    close_raw = pd.DataFrame({"LONG": [10, 11, 12, 13, 14], "SHORT": [None, None, None, 23, 24]}, index=dates)
+    div_raw = pd.DataFrame({"LONG": [0.0] * 5, "SHORT": [0.0] * 5}, index=dates)
+    raw = pd.concat({"Close": close_raw, "Dividends": div_raw}, axis=1)
+    monkeypatch.setattr(data_module.yf, "download", lambda *a, **k: raw)
+
+    series_by_ticker = fetch_extended_series(["LONG", "SHORT"], "2000-01-01", "2000-01-05")
+
+    # each ticker keeps its own full range - SHORT's late start doesn't truncate LONG
+    assert list(series_by_ticker["LONG"][0].index) == list(dates)
+    assert list(series_by_ticker["SHORT"][0].index) == list(dates[3:])
+
+    long_only_close, _ = intersect_tickers(series_by_ticker, ["LONG"])
+    assert list(long_only_close.index) == list(dates)
+
+    both_close, _ = intersect_tickers(series_by_ticker, ["LONG", "SHORT"])
+    assert list(both_close.index) == list(dates[3:])

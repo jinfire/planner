@@ -24,6 +24,38 @@ def test_constant_strategy_label_matches_its_weights():
     assert result.label == {"A": 0.6, "B": 0.4}
 
 
+def test_constant_strategy_tickers_excludes_zero_weight_entries():
+    strategy = ConstantWithdrawalStrategy({"A": 1.0, "B": 0.0}, withdrawal_rate=0.04)
+
+    assert strategy.tickers == ["A"]
+
+
+def test_constant_strategy_simulate_works_with_only_active_ticker_columns():
+    # B has zero weight, so close/dividends only need to cover A - simulating a
+    # dataset that was sliced down to just this strategy's active tickers
+    strategy = ConstantWithdrawalStrategy({"A": 1.0, "B": 0.0}, withdrawal_rate=0.04)
+    dates = pd.to_datetime(["2020-01-02", "2020-06-01"])
+    close = pd.DataFrame({"A": [10, 11]}, index=dates)
+    div = pd.DataFrame({"A": [0.0, 0.0]}, index=dates)
+
+    result = strategy.simulate(close, div, cpi=None)
+
+    assert result.label == {"A": 1.0, "B": 0.0}
+    assert not result.value.empty
+
+
+def test_guyton_klinger_strategy_tickers_excludes_zero_weight_entries():
+    strategy = GuytonKlingerWithdrawalStrategy({"A": 1.0, "B": 0.0}, initial_withdrawal_rate=0.04)
+
+    assert strategy.tickers == ["A"]
+
+
+def test_bucket_strategy_tickers_is_growth_and_reserve():
+    strategy = BucketWithdrawalStrategy("A", "B", reserve_weight=0.1, withdrawal_rate=0.04, cash_years=3)
+
+    assert strategy.tickers == ["A", "B"]
+
+
 def test_constant_strategy_value_reflects_the_actual_withdrawal_path():
     strategy = ConstantWithdrawalStrategy({"A": 1.0}, withdrawal_rate=0.5)
     close, div = _make_data()

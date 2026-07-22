@@ -3,7 +3,7 @@ import pandas as pd
 from generator import generate_portfolios
 from ranking import rank_portfolios
 from simulator.cpi import fetch_cpi
-from simulator.data import fetch_price_data
+from simulator.data import fetch_extended_series, intersect_tickers
 from simulator.metrics import annual_volatility, cagr, max_drawdown, years_survived
 from simulator.monte_carlo import annual_returns, simulate_paths, survival_probability
 from simulator.retirement_score import retirement_score
@@ -100,26 +100,35 @@ def build_strategies() -> list:
     return STRATEGY_BUILDERS[WITHDRAWAL_STRATEGY]()
 
 
-def required_tickers() -> list[str]:
-    """Union of every ticker any active strategy needs, so fetch_price_data always
-    covers whichever strategy/strategies WITHDRAWAL_STRATEGY selects."""
-    tickers = set(TICKERS)
-    if WITHDRAWAL_STRATEGY in ("bucket", "all"):
-        tickers |= {BUCKET_GROWTH_TICKER, BUCKET_RESERVE_TICKER}
+def universe_tickers(strategies: list[WithdrawalStrategy]) -> list[str]:
+    """Union of every ticker any strategy in `strategies` needs, so the universe fetch
+    covers all of them. Each strategy still only gets intersected down to its own
+    `.tickers` later - this is just what to fetch once, up front."""
+    tickers: set[str] = set()
+    for strategy in strategies:
+        tickers |= set(strategy.tickers)
     return sorted(tickers)
 
 
-def evaluate(strategy: WithdrawalStrategy, close: pd.DataFrame, dividends: pd.DataFrame, cpi: pd.Series | None) -> dict:
-    """CAGR/MDD/survival are all judged from `result.value` - the balance a retiree
+def evaluate(strategy: WithdrawalStrategy, universe: dict, full_cpi: pd.Series) -> dict:
+    """Each strategy gets data intersected down to only *its own* active tickers, so
+    a combo that includes a short-history asset (e.g. QLD) doesn't force a combo that
+    doesn't need it (e.g. SPY+TLT only) down to the same short window - different
+    combos legitimately get different amounts of history to backtest over.
+
+    CAGR/MDD/survival are all judged from `result.value` - the balance a retiree
     would actually see - so every strategy is scored on the same footing regardless of
     how differently it's shaped internally.
 
     survival_probability comes from one of three sources, in priority order: (1) the
-    rolling-window success rate across many historical start years, if
-    USE_ROLLING_WINDOW is on - the most grounded estimate, since it's built from many
-    real sequences rather than one fixed start date or synthetic resampling; (2) Monte
-    Carlo, for strategies that can supply a pure-growth return series to bootstrap
-    from; (3) a binary survived/not-survived fallback otherwise."""
+    rolling-window success rate across every historical start year this combo's own
+    data range allows, if USE_ROLLING_WINDOW is on - the most grounded estimate, since
+    it's built from many real sequences rather than one fixed start date or synthetic
+    resampling; (2) Monte Carlo, for strategies that can supply a pure-growth return
+    series to bootstrap from; (3) a binary survived/not-survived fallback otherwise."""
+    close, dividends = intersect_tickers(universe, strategy.tickers)
+    cpi = full_cpi.loc[close.index.min() : close.index.max()]
+
     result = strategy.simulate(close, dividends, cpi)
     portfolio_cagr = cagr(result.value)
     portfolio_mdd = max_drawdown(result.value)
@@ -154,6 +163,8 @@ def evaluate(strategy: WithdrawalStrategy, close: pd.DataFrame, dividends: pd.Da
         "years_survived": survival_fraction,
         "final_value": final_value,
         "total_return_pct": (final_value - 1) * 100,
+        "data_start": close.index.min().date().isoformat(),
+        "data_years": round((close.index.max() - close.index.min()).days / 365.25, 1),
         "retirement_score": retirement_score(
             survival,
             portfolio_cagr,
@@ -169,13 +180,12 @@ def evaluate(strategy: WithdrawalStrategy, close: pd.DataFrame, dividends: pd.Da
 
 
 def main():
-    close, dividends = fetch_price_data(required_tickers(), START, END)
-    cpi = fetch_cpi(START, END)
-
     strategies = build_strategies()
+    universe = fetch_extended_series(universe_tickers(strategies), START, END)
+    full_cpi = fetch_cpi(START, END)
     print(f"Running {len(strategies)} strategy configuration(s) ({WITHDRAWAL_STRATEGY})\n")
 
-    results = [evaluate(strategy, close, dividends, cpi) for strategy in strategies]
+    results = [evaluate(strategy, universe, full_cpi) for strategy in strategies]
     ranked = rank_portfolios(results)
 
     df = pd.DataFrame([{**r["weights"], **{k: v for k, v in r.items() if k != "weights"}} for r in ranked])
@@ -188,7 +198,8 @@ def main():
             f"  {r['weights']}  Score={r['retirement_score']:.1f}  "
             f"HistSurvived={r['historical_survived']}  Survival={r['survival_probability']:.1%}  "
             f"CAGR={r['cagr']:.2%}  MDD={r['mdd']:.2%}  "
-            f"TotalReturn={r['total_return_pct']:.1f}%  FinalValue={r['final_value']:.3f}x"
+            f"TotalReturn={r['total_return_pct']:.1f}%  FinalValue={r['final_value']:.3f}x  "
+            f"Data={r['data_start']}~ ({r['data_years']}y)"
         )
 
 
