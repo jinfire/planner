@@ -19,20 +19,34 @@ def fetch_price_data(tickers: list[str], start: str, end: str) -> tuple[pd.DataF
     dividends = raw["Dividends"]
     start_ts = pd.Timestamp(start)
 
-    def fetch_close(other_ticker: str):
-        if other_ticker in close.columns:
-            return close[other_ticker].dropna()
-        other_raw = yf.download(other_ticker, start=start, end=end, auto_adjust=False)
-        if other_raw.empty:
-            return None
-        other_close = other_raw["Close"]
-        if isinstance(other_close, pd.DataFrame):
-            other_close = other_close[other_ticker]
-        return other_close.dropna()
-
     def fetch_fred(series_id: str):
         series = fetch_fred_series(series_id, start, end)
         return series if not series.empty else None
+
+    def fetch_close(other_ticker: str, _seen: frozenset[str] = frozenset()):
+        # A backfill source (base/proxy ticker) can itself have a backfill mapping -
+        # e.g. QLD's base QQQ can be extended via ^NDX - so extend recursively before
+        # handing it back. `_seen` guards against cycles between mappings.
+        if other_ticker in _seen:
+            return None
+        _seen = _seen | {other_ticker}
+
+        if other_ticker in close.columns:
+            series = close[other_ticker].dropna()
+        else:
+            other_raw = yf.download(other_ticker, start=start, end=end, auto_adjust=False)
+            if other_raw.empty:
+                return None
+            other_close = other_raw["Close"]
+            if isinstance(other_close, pd.DataFrame):
+                other_close = other_close[other_ticker]
+            series = other_close.dropna()
+
+        if not reaches_start(series, start_ts):
+            series = extend_close_series(
+                other_ticker, start_ts, series, lambda t: fetch_close(t, _seen), fetch_fred
+            )
+        return series
 
     extended = {}
     for ticker in tickers:
