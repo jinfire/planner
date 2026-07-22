@@ -462,6 +462,41 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
   1927년까지, SPY/QQQ/QLD/TLT/IEF/SGOV 6개를 다 같이 쓰면 **1999년 → 1985년**
   (26년 → 40년)으로 늘어남
 
+### 25. 포트폴리오마다 자기 티커만큼만 데이터 기간 쓰기 (사전계산의 첫 조각)
+- 문제의식: 지금까지는 "18개(또는 6개) 다 같이 fetch → 교집합"이라 제일 짧은
+  자산 하나가 전체를 다 끌어내렸음. 근데 실제로 QLD를 0% 쓰는 조합이라면 QLD의
+  짧은 역사에 얽매일 이유가 없음 - **조합마다 실제로 쓰는 자산만으로 교집합해야
+  더 긴 기간을 쓸 수 있음**
+- `simulator/data.py`
+  - `fetch_extended_series(tickers, start, end)` (신규) - 기존 `fetch_price_data`의
+    내부 로직(재귀 확장 포함)은 그대로 두되, 마지막에 전체 티커를 교집합하지
+    않고 **티커별로 각자 확장된 시리즈를 그대로** 딕셔너리로 반환
+  - `intersect_tickers(series_by_ticker, tickers)` (신규) - 딕셔너리에서 원하는
+    티커 부분집합만 골라 교집합 - 어떤 부분집합을 고르느냐에 따라 결과 기간이
+    달라짐
+  - `fetch_price_data()`는 이제 이 둘을 합친 얇은 래퍼로 재작성 (기존 동작/
+    테스트는 그대로 유지)
+- `simulator/strategy.py` - 모든 전략 클래스에 `.tickers` 속성 추가 (실제로
+  쓰는 티커 목록). `ConstantWithdrawalStrategy`/`GuytonKlingerWithdrawalStrategy`는
+  **비중이 0인 티커를 자동으로 제외**(`self.tickers`도, `simulate()`에 넘기는
+  가중치도), `BucketWithdrawalStrategy`는 growth+reserve 티커 고정 2개.
+  `label`(CSV 표시용)은 0% 티커도 그대로 남겨서 결과표는 모든 티커 컬럼을
+  일관되게 유지
+- `main.py` - 전체 유니버스를 `fetch_extended_series()`로 한 번만 fetch해두고,
+  `evaluate()`가 전략마다 `intersect_tickers(universe, strategy.tickers)`로
+  필요한 것만 골라 씀. 결과에 `data_start`/`data_years` 필드 추가 - 이 조합이
+  실제로 몇 년치 데이터로 평가됐는지 그대로 노출 (나중에 Advisor가 "이 추천은
+  55년치 기준, 이건 39년치 기준"이라고 신뢰도를 같이 말해줄 수 있는 근거)
+- `simulator/tests/test_data.py` - LONG/SHORT 두 가짜 티커로, 부분집합에 따라
+  교집합 기간이 실제로 달라지는지 검증. `simulator/tests/test_strategy.py` -
+  0% 비중 티커가 `.tickers`/시뮬레이션 입력에서 빠지는지, 그렇게 활성 티커만
+  담긴 좁은 `close`/`dividends`로도 정상 동작하는지 검증
+- 실측(SPY/QQQ/QLD/TLT/IEF/SGOV 유니버스, 1970년부터 요청):
+  - SPY+TLT+IEF+SGOV(QQQ/QLD 없음): 1970~2024 (**55.0년**)
+  - +QQQ(QLD는 없음): 1985~2024 (39.2년)
+  - +QLD까지 다 포함: 1985~2024 (39.2년, QQQ 한계와 동일)
+  - 같은 유니버스 안에서도 조합에 따라 최대 16년 차이가 실제로 남
+
 ## 다음 후보 (사용자와 큰 그림 논의: 사전계산 + 가치관 기반 Advisor + 프론트엔드)
 
 - 순서는 **백엔드 먼저, UI는 마지막**으로 합의함
@@ -484,7 +519,9 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
 
 ## 다음 후보
 
-1. 18개 자산 전체 조합 사전계산 배치 스크립트 (캐싱)
+1. 18개 자산 전체로 TICKERS 확장 + 20% 단위 26,334개 조합 사전계산 배치 스크립트
+   (캐싱) - 조합마다 다른 기간을 쓰는 기반(25번)은 마련됨, 그 위에 실제 대규모
+   실행/저장만 남음
 2. 인출률/은퇴기간을 main.py 상수가 아니라 스윕 가능한 옵션으로
 3. Advisor 로직 (가중치 기반 추천 3개 + 생존확률/고갈시점/월인출액 서술) -
    LLM 없이 우선 코드로 구현
