@@ -44,11 +44,41 @@ with st.sidebar:
         format_func=lambda r: f"{r:.1%}",
     )
     st.subheader("Score 가중치 (뭘 중요하게 볼지)")
-    survival_weight = st.slider("생존확률", 0.0, 200.0, main.SCORE_SURVIVAL_WEIGHT, step=5.0)
-    growth_weight = st.slider("성장 (CAGR)", 0.0, 200.0, main.SCORE_GROWTH_WEIGHT, step=5.0)
-    risk_weight = st.slider("낙폭 방어 (MDD)", 0.0, 200.0, main.SCORE_RISK_WEIGHT, step=5.0)
+    st.caption("숫자가 클수록 그 항목을 더 중요하게 봅니다.")
+    survival_weight = st.slider(
+        "생존확률",
+        0.0,
+        200.0,
+        main.SCORE_SURVIVAL_WEIGHT,
+        step=5.0,
+        help="과거 데이터 기준, 이 배분으로 인출을 시작했을 때 돈이 바닥나지 "
+        "않고 끝까지 버틴 비율. 높일수록 '안 망하는 것'을 최우선으로 봄.",
+    )
+    growth_weight = st.slider(
+        "성장 (CAGR)",
+        0.0,
+        200.0,
+        main.SCORE_GROWTH_WEIGHT,
+        step=5.0,
+        help="연평균 수익률. 높일수록 자산이 더 많이 불어나는 배분을 선호함.",
+    )
+    risk_weight = st.slider(
+        "낙폭 방어 (MDD)",
+        0.0,
+        200.0,
+        main.SCORE_RISK_WEIGHT,
+        step=5.0,
+        help="최대낙폭. 최고점 대비 가장 많이 떨어졌을 때 몇 %나 떨어졌는지. "
+        "높일수록 급락이 덜한(변동성 낮은) 배분을 선호함.",
+    )
     longevity_weight = st.slider(
-        "고갈 지연 (동률일 때만 작동)", 0.0, 50.0, main.SCORE_LONGEVITY_WEIGHT, step=1.0
+        "고갈 지연",
+        0.0,
+        50.0,
+        main.SCORE_LONGEVITY_WEIGHT,
+        step=1.0,
+        help="이미 살아남은 배분끼리는 영향 없음 - 둘 다 고갈된 배분끼리 "
+        "비교할 때만, 더 오래 버티다 고갈된 쪽에 주는 보너스.",
     )
     submitted = st.button("추천 받기", type="primary")
 
