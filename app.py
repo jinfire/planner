@@ -112,5 +112,10 @@ if submitted:
             strategy = ConstantWithdrawalStrategy(rec["weights"], withdrawal_rate, main.REBALANCE_FREQ)
             close, dividends = intersect_tickers(universe, strategy.tickers)
             trajectory = strategy.simulate(close, dividends, full_cpi).value
-            st.line_chart(trajectory.rename("자산 가치 (초기자본 = 1.0)"))
+            # Vega-Lite (the chart engine behind st.line_chart) treats "." in a field
+            # name as nested-field access, so a name like "... = 1.0" silently breaks
+            # the data binding and renders empty axes with no line - name it without
+            # a period instead.
+            st.caption("자산 가치 (초기 자본 = 1배 기준)")
+            st.line_chart(trajectory.rename("자산가치"))
             st.divider()
