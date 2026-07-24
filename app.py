@@ -44,11 +44,14 @@ with st.sidebar:
         format_func=lambda r: f"{r:.1%}",
     )
     st.subheader("Score 가중치 (뭘 중요하게 볼지)")
-    st.caption("숫자가 클수록 그 항목을 더 중요하게 봅니다.")
+    st.caption(
+        "셋 다 같은 0~100 척도의 독립적인 다이얼입니다 - 서로 더해서 어떤 "
+        "합계가 돼야 하는 건 아니고, 각자 그 항목을 얼마나 중요하게 볼지만 정해요."
+    )
     survival_weight = st.slider(
         "생존확률",
         0.0,
-        200.0,
+        100.0,
         main.SCORE_SURVIVAL_WEIGHT,
         step=5.0,
         help="과거 데이터 기준, 이 배분으로 인출을 시작했을 때 돈이 바닥나지 "
@@ -57,7 +60,7 @@ with st.sidebar:
     growth_weight = st.slider(
         "성장 (CAGR)",
         0.0,
-        200.0,
+        100.0,
         main.SCORE_GROWTH_WEIGHT,
         step=5.0,
         help="연평균 수익률. 높일수록 자산이 더 많이 불어나는 배분을 선호함.",
@@ -65,21 +68,16 @@ with st.sidebar:
     risk_weight = st.slider(
         "낙폭 방어 (MDD)",
         0.0,
-        200.0,
+        100.0,
         main.SCORE_RISK_WEIGHT,
         step=5.0,
         help="최대낙폭. 최고점 대비 가장 많이 떨어졌을 때 몇 %나 떨어졌는지. "
         "높일수록 급락이 덜한(변동성 낮은) 배분을 선호함.",
     )
-    longevity_weight = st.slider(
-        "고갈 지연",
-        0.0,
-        50.0,
-        main.SCORE_LONGEVITY_WEIGHT,
-        step=1.0,
-        help="이미 살아남은 배분끼리는 영향 없음 - 둘 다 고갈된 배분끼리 "
-        "비교할 때만, 더 오래 버티다 고갈된 쪽에 주는 보너스.",
-    )
+    # longevity(고갈 지연)는 "이미 둘 다 고갈된 배분끼리"만 비교하는 미세
+    # 타이브레이커라 사용자가 조절할 만큼 체감 차이가 없어서 고정값으로 뺌 -
+    # main.SCORE_LONGEVITY_WEIGHT 참고
+    longevity_weight = main.SCORE_LONGEVITY_WEIGHT
     submitted = st.button("추천 받기", type="primary")
 
 if submitted:
