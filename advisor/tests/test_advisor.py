@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from advisor import describe_ticker, explain_recommendation, recommend_portfolios
+from advisor import build_intro_message, build_rank_explanation, describe_ticker, recommend_portfolios
 
 TICKERS = ["A", "B", "C"]
 
@@ -103,18 +103,6 @@ def test_monthly_withdrawal_scales_with_total_assets():
     assert recs[0]["monthly_withdrawal"] == pytest.approx(120_000 * 0.04 / 12)
 
 
-def test_explain_recommendation_mentions_key_figures():
-    results = _make_results()
-    rec = recommend_portfolios(results, TICKERS, withdrawal_rate=0.04, total_assets=120_000, top_n=1)[0]
-
-    text = explain_recommendation(rec, rank=1)
-
-    assert "1순위" in text
-    assert "B 100%" in text
-    assert "4.0%" in text
-    assert "생존확률" in text
-
-
 def test_describe_ticker_adds_asset_class_for_known_tickers():
     assert describe_ticker("IEF") == "IEF(미국 중기국채)"
     assert describe_ticker("GLD") == "GLD(금)"
@@ -124,13 +112,43 @@ def test_describe_ticker_falls_back_to_bare_ticker_when_unmapped():
     assert describe_ticker("ZZZ") == "ZZZ"
 
 
-def test_explain_recommendation_describes_asset_class_not_just_ticker():
+def test_build_intro_message_picks_survival_phrase_when_survival_weight_highest():
+    text = build_intro_message(survival_weight=100.0, growth_weight=20.0, risk_weight=50.0)
+
+    assert "돈이 안 떨어지는 것" in text
+
+
+def test_build_intro_message_picks_growth_phrase_when_growth_weight_highest():
+    text = build_intro_message(survival_weight=10.0, growth_weight=90.0, risk_weight=10.0)
+
+    assert "더 크게 불리는" in text
+
+
+def test_build_intro_message_picks_risk_phrase_when_risk_weight_highest():
+    text = build_intro_message(survival_weight=10.0, growth_weight=10.0, risk_weight=90.0)
+
+    assert "큰 하락을 피하는" in text
+
+
+def test_build_rank_explanation_states_final_amount_in_won_not_a_multiplier():
     results = _make_results()
-    rec = recommend_portfolios(results, TICKERS, withdrawal_rate=0.04, total_assets=120_000, top_n=10)[0]
-    # row2 (B only) is the top pick, but B has no asset-class mapping (test fixture
-    # tickers aren't real symbols) - swap in a real one to check the labeling itself.
-    rec["weights"] = {"GLD": 1.0}
+    # row2 (B only, final_value=1.5) is the top pick under default weights
+    top_rec = recommend_portfolios(results, TICKERS, withdrawal_rate=0.04, total_assets=500_000_000, top_n=1)[0]
+    assert top_rec["final_value"] == pytest.approx(1.5)
 
-    text = explain_recommendation(rec, rank=1)
+    text = build_rank_explanation(top_rec, rank=1, total_assets=500_000_000)
 
-    assert "GLD(금) 100%" in text
+    assert "1순위" in text
+    assert f"{500_000_000 * 1.5:,.0f}원" in text
+    assert "1.5배" not in text
+
+
+def test_build_rank_explanation_mentions_depletion_date_when_depleted():
+    results = _make_results()
+    c_rec = recommend_portfolios(results, TICKERS, withdrawal_rate=0.04, total_assets=500_000_000, top_n=10)
+    c_rec = next(r for r in c_rec if set(r["weights"]) == {"C"})
+
+    text = build_rank_explanation(c_rec, rank=3, total_assets=500_000_000)
+
+    assert "3순위" in text
+    assert c_rec["depleted_at"] in text
