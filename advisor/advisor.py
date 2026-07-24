@@ -2,6 +2,35 @@ import pandas as pd
 
 from simulator.retirement_score import retirement_score
 
+# Plain-language asset class per ticker (see main.py's TICKERS) - tickers alone don't
+# mean much to someone who isn't already familiar with them, so recommendations are
+# described by what they actually are, not just the fund symbol.
+TICKER_ASSET_CLASS: dict[str, str] = {
+    "SPY": "미국 대형주",
+    "QQQ": "미국 나스닥 성장주",
+    "QLD": "미국 나스닥 성장주(2배 레버리지)",
+    "TQQQ": "미국 나스닥 성장주(3배 레버리지)",
+    "SSO": "미국 대형주(2배 레버리지)",
+    "UPRO": "미국 대형주(3배 레버리지)",
+    "VTI": "미국 전체주식",
+    "SCHD": "미국 배당성장주",
+    "NOBL": "미국 배당귀족주",
+    "VEA": "선진국주식(미국 제외)",
+    "VWO": "신흥국주식",
+    "TLT": "미국 장기국채",
+    "IEF": "미국 중기국채",
+    "BND": "미국 종합채권",
+    "SGOV": "미국 단기국채(현금성)",
+    "GLD": "금",
+    "DBC": "원자재",
+}
+
+
+def describe_ticker(ticker: str) -> str:
+    """`"IEF(미국 중기국채)"` for a known ticker, or just `ticker` if unmapped."""
+    asset_class = TICKER_ASSET_CLASS.get(ticker)
+    return f"{ticker}({asset_class})" if asset_class else ticker
+
 
 def recommend_portfolios(
     results: pd.DataFrame,
@@ -87,7 +116,9 @@ def _estimate_depletion_date(row) -> str:
 
 def explain_recommendation(rec: dict, rank: int) -> str:
     """Code-based (no LLM) natural-language summary of one recommendation."""
-    allocation = ", ".join(f"{t} {w:.0%}" for t, w in sorted(rec["weights"].items(), key=lambda kv: -kv[1]))
+    allocation = ", ".join(
+        f"{describe_ticker(t)} {w:.0%}" for t, w in sorted(rec["weights"].items(), key=lambda kv: -kv[1])
+    )
     monthly = f"{rec['monthly_withdrawal']:,.0f}"
 
     if rec["depleted"]:

@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 import main
-from advisor import explain_recommendation, recommend_portfolios
+from advisor import describe_ticker, explain_recommendation, recommend_portfolios
 from simulator.cpi import fetch_cpi
 from simulator.data import fetch_extended_series, intersect_tickers
 from simulator.strategy import ConstantWithdrawalStrategy
@@ -102,7 +102,8 @@ if submitted:
             st.subheader(f"{i}순위")
             col1, col2 = st.columns(2)
             with col1:
-                st.bar_chart(pd.Series(rec["weights"], name="비중"))
+                labeled_weights = {describe_ticker(t): w for t, w in rec["weights"].items()}
+                st.bar_chart(pd.Series(labeled_weights, name="비중"))
             with col2:
                 st.metric("생존확률", f"{rec['survival_probability']:.1%}")
                 st.metric("월 인출액", f"{rec['monthly_withdrawal']:,.0f}원")

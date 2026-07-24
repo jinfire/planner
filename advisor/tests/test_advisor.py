@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from advisor import explain_recommendation, recommend_portfolios
+from advisor import describe_ticker, explain_recommendation, recommend_portfolios
 
 TICKERS = ["A", "B", "C"]
 
@@ -113,3 +113,24 @@ def test_explain_recommendation_mentions_key_figures():
     assert "B 100%" in text
     assert "4.0%" in text
     assert "생존확률" in text
+
+
+def test_describe_ticker_adds_asset_class_for_known_tickers():
+    assert describe_ticker("IEF") == "IEF(미국 중기국채)"
+    assert describe_ticker("GLD") == "GLD(금)"
+
+
+def test_describe_ticker_falls_back_to_bare_ticker_when_unmapped():
+    assert describe_ticker("ZZZ") == "ZZZ"
+
+
+def test_explain_recommendation_describes_asset_class_not_just_ticker():
+    results = _make_results()
+    rec = recommend_portfolios(results, TICKERS, withdrawal_rate=0.04, total_assets=120_000, top_n=10)[0]
+    # row2 (B only) is the top pick, but B has no asset-class mapping (test fixture
+    # tickers aren't real symbols) - swap in a real one to check the labeling itself.
+    rec["weights"] = {"GLD": 1.0}
+
+    text = explain_recommendation(rec, rank=1)
+
+    assert "GLD(금) 100%" in text
