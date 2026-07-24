@@ -1,3 +1,7 @@
+import multiprocessing as mp
+import os
+import time
+
 import pandas as pd
 
 from generator import generate_portfolios
@@ -7,7 +11,7 @@ from simulator.data import fetch_extended_series, intersect_tickers
 from simulator.metrics import annual_volatility, cagr, max_drawdown, years_survived
 from simulator.monte_carlo import annual_returns, simulate_paths, survival_probability
 from simulator.retirement_score import retirement_score
-from simulator.rolling_window import evaluate_rolling_window
+from simulator.rolling_window import evaluate_perpetual_success, evaluate_rolling_window
 from simulator.strategy import (
     BucketWithdrawalStrategy,
     ConstantWithdrawalStrategy,
@@ -18,24 +22,47 @@ from simulator.strategy import (
 # "flat", "bucket", "guyton_klinger", or "all" (run every strategy below and rank them together)
 WITHDRAWAL_STRATEGY = "flat"
 
-# If True, survival_probability comes from re-running each strategy across every
-# rolling `ROLLING_WINDOW_YEARS`-long historical start year and taking the success
-# rate, instead of a single fixed start date (2000) plus Monte Carlo. A strategy that
-# only looks good because it happened to dodge 2000's crash won't get away with it.
+# How survival_probability is computed - only one of these is used, checked in this
+# order:
+# 1. USE_PERPETUAL: re-run starting at every historical year, each time simulating all
+#    the way to the *end* of available data (a different length each time) - "would
+#    this have lasted through today if I'd started withdrawing back then?" No fixed
+#    retirement length is assumed; the answer for a given combo is only as good as
+#    however much history that combo's own tickers allow (see data_years below).
+# 2. USE_ROLLING_WINDOW: fixed ROLLING_WINDOW_YEARS-long windows, many start years.
+# 3. Monte Carlo (RETIREMENT_YEARS, bootstrapped from this combo's own return
+#    history), for strategies that can supply a pure-growth return series.
+# 4. A binary survived/not-survived fallback otherwise.
+USE_PERPETUAL = True
+PERPETUAL_MIN_YEARS = 5.0  # ignore start years with less runway than this to the end
+
 USE_ROLLING_WINDOW = False
 ROLLING_WINDOW_YEARS = 20
 
-TICKERS = ["SPY", "QQQ", "QLD", "TLT", "IEF", "SGOV"]
+TICKERS = [
+    "SPY", "QQQ", "QLD", "TQQQ", "SSO", "UPRO",  # US large-cap / growth / leveraged
+    "VTI", "SCHD", "NOBL",  # US total market / dividend growth / dividend aristocrats
+    "VEA", "VWO",  # developed ex-US / emerging markets
+    "TLT", "IEF", "BND",  # long/intermediate treasuries / aggregate bond
+    "SGOV",  # cash-equivalent
+    "GLD", "DBC",  # gold / broad commodities
+]
 GENERATOR_STEP = 20  # % increments between candidate weights
+WITHDRAWAL_RATE_OPTIONS = [0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06]
 START = "2000-01-01"
 END = "2024-12-31"
 REBALANCE_FREQ = "quarterly"
-WITHDRAWAL_RATE = 0.04
+WITHDRAWAL_RATE = 0.04  # used by bucket/Monte Carlo paths, which don't sweep rates
 ASSUMED_INFLATION_RATE = 0.03
 RETIREMENT_YEARS = 30
 NUM_SIMULATIONS = 200
 SEED = 42
 RESULTS_CSV = "results.csv"
+
+# strategies are fully independent, so evaluate() calls are split across processes
+# instead of running single-threaded - leaves 2 cores free for the OS/other apps
+NUM_WORKERS = max(1, (os.cpu_count() or 4) - 2)
+PROGRESS_EVERY = 2000  # print elapsed/ETA every N completed strategies
 
 # How much each factor moves retirement_score (see simulator.retirement_score) -
 # tune to taste, there's no universally "correct" answer here. Defaults below assume
@@ -59,15 +86,17 @@ BUCKET_DOWN_THRESHOLD = 0.0  # a "down year" = the growth ticker's own return < 
 
 def build_flat_strategies() -> list[ConstantWithdrawalStrategy]:
     return [
-        ConstantWithdrawalStrategy(weights, WITHDRAWAL_RATE, REBALANCE_FREQ)
+        ConstantWithdrawalStrategy(weights, rate, REBALANCE_FREQ)
         for weights in generate_portfolios(TICKERS, step=GENERATOR_STEP)
+        for rate in WITHDRAWAL_RATE_OPTIONS
     ]
 
 
 def build_guyton_klinger_strategies() -> list[GuytonKlingerWithdrawalStrategy]:
     return [
-        GuytonKlingerWithdrawalStrategy(weights, WITHDRAWAL_RATE, REBALANCE_FREQ)
+        GuytonKlingerWithdrawalStrategy(weights, rate, REBALANCE_FREQ)
         for weights in generate_portfolios(TICKERS, step=GENERATOR_STEP)
+        for rate in WITHDRAWAL_RATE_OPTIONS
     ]
 
 
@@ -120,24 +149,27 @@ def evaluate(strategy: WithdrawalStrategy, universe: dict, full_cpi: pd.Series) 
     would actually see - so every strategy is scored on the same footing regardless of
     how differently it's shaped internally.
 
-    survival_probability comes from one of three sources, in priority order: (1) the
-    rolling-window success rate across every historical start year this combo's own
-    data range allows, if USE_ROLLING_WINDOW is on - the most grounded estimate, since
-    it's built from many real sequences rather than one fixed start date or synthetic
-    resampling; (2) Monte Carlo, for strategies that can supply a pure-growth return
-    series to bootstrap from; (3) a binary survived/not-survived fallback otherwise."""
+    See the USE_PERPETUAL/USE_ROLLING_WINDOW comment above for how survival_probability
+    is computed."""
     close, dividends = intersect_tickers(universe, strategy.tickers)
-    cpi = full_cpi.loc[close.index.min() : close.index.max()]
 
-    result = strategy.simulate(close, dividends, cpi)
+    # full_cpi is passed through unsliced: cpi_adjusted_withdrawal resolves the first
+    # withdrawal date via .asof(), which needs CPI history at or before that date.
+    # Slicing to close.index.min() left no such entry (CPI ticks land on the 1st of
+    # the month; a data series's first trading day never is), so .asof() returned NaN
+    # and silently poisoned every subsequent value in the series.
+    result = strategy.simulate(close, dividends, full_cpi)
     portfolio_cagr = cagr(result.value)
     portfolio_mdd = max_drawdown(result.value)
     survival_fraction = years_survived(result.value)
     final_value = result.value.iloc[-1]
     historical_survived = final_value > 0
 
-    if USE_ROLLING_WINDOW:
-        rolling = evaluate_rolling_window(strategy, close, dividends, cpi, ROLLING_WINDOW_YEARS)
+    if USE_PERPETUAL:
+        perpetual = evaluate_perpetual_success(strategy, close, dividends, full_cpi, PERPETUAL_MIN_YEARS)
+        survival = perpetual["success_rate"]
+    elif USE_ROLLING_WINDOW:
+        rolling = evaluate_rolling_window(strategy, close, dividends, full_cpi, ROLLING_WINDOW_YEARS)
         survival = rolling["success_rate"]
     elif historical_survived and result.monte_carlo_returns is not None:
         returns = annual_returns(result.monte_carlo_returns)
@@ -153,8 +185,11 @@ def evaluate(strategy: WithdrawalStrategy, universe: dict, full_cpi: pd.Series) 
     else:
         survival = 1.0 if historical_survived else 0.0
 
+    withdrawal_rate = getattr(strategy, "withdrawal_rate", None) or getattr(strategy, "initial_withdrawal_rate", None)
+
     return {
         "weights": result.label,
+        "withdrawal_rate": withdrawal_rate,
         "cagr": portfolio_cagr,
         "volatility": annual_volatility(result.value),
         "mdd": portfolio_mdd,
@@ -179,13 +214,44 @@ def evaluate(strategy: WithdrawalStrategy, universe: dict, full_cpi: pd.Series) 
     }
 
 
+# Set once per worker process via Pool's initializer, instead of re-pickling universe/
+# full_cpi (small but non-trivial - a couple thousand rows per ticker) on every single
+# one of 183k+ tasks. Module-level so worker processes (which re-import this module
+# under Windows' spawn start method) can find them by name when unpickling _evaluate_worker.
+_worker_universe: dict | None = None
+_worker_cpi: pd.Series | None = None
+
+
+def _init_worker(universe: dict, full_cpi: pd.Series) -> None:
+    global _worker_universe, _worker_cpi
+    _worker_universe = universe
+    _worker_cpi = full_cpi
+
+
+def _evaluate_worker(strategy: WithdrawalStrategy) -> dict:
+    return evaluate(strategy, _worker_universe, _worker_cpi)
+
+
 def main():
     strategies = build_strategies()
     universe = fetch_extended_series(universe_tickers(strategies), START, END)
     full_cpi = fetch_cpi(START, END)
-    print(f"Running {len(strategies)} strategy configuration(s) ({WITHDRAWAL_STRATEGY})\n")
+    print(
+        f"Running {len(strategies)} strategy configuration(s) ({WITHDRAWAL_STRATEGY}) "
+        f"across {NUM_WORKERS} worker processes\n"
+    )
 
-    results = [evaluate(strategy, universe, full_cpi) for strategy in strategies]
+    results = []
+    start_time = time.monotonic()
+    with mp.Pool(NUM_WORKERS, initializer=_init_worker, initargs=(universe, full_cpi)) as pool:
+        for i, result in enumerate(pool.imap_unordered(_evaluate_worker, strategies, chunksize=20), 1):
+            results.append(result)
+            if i % PROGRESS_EVERY == 0 or i == len(strategies):
+                elapsed = time.monotonic() - start_time
+                rate = i / elapsed
+                eta_min = (len(strategies) - i) / rate / 60 if rate > 0 else float("inf")
+                print(f"  {i}/{len(strategies)} done - {elapsed / 60:.1f}min elapsed, ETA {eta_min:.1f}min ({rate:.1f}/s)")
+
     ranked = rank_portfolios(results)
 
     df = pd.DataFrame([{**r["weights"], **{k: v for k, v in r.items() if k != "weights"}} for r in ranked])
@@ -195,7 +261,7 @@ def main():
     print("Top 5 by Retirement Score:")
     for r in ranked[:5]:
         print(
-            f"  {r['weights']}  Score={r['retirement_score']:.1f}  "
+            f"  {r['weights']}  Rate={r['withdrawal_rate']:.1%}  Score={r['retirement_score']:.1f}  "
             f"HistSurvived={r['historical_survived']}  Survival={r['survival_probability']:.1%}  "
             f"CAGR={r['cagr']:.2%}  MDD={r['mdd']:.2%}  "
             f"TotalReturn={r['total_return_pct']:.1f}%  FinalValue={r['final_value']:.3f}x  "

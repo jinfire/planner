@@ -67,6 +67,25 @@ def test_cpi_based_withdrawal_tracks_actual_inflation():
     assert value.iloc[-1] == pytest.approx(0.9 - 0.106)
 
 
+def test_cpi_with_no_entry_before_first_withdrawal_does_not_produce_nan():
+    # Regression test: real CPI series are monthly (ticks on the 1st), but a price
+    # series's first trading day is never the 1st - so cpi.asof() on a series that
+    # starts strictly after the first withdrawal date has no valid entry there, which
+    # used to return NaN and silently poison the whole result via the failed `<= 0`
+    # depletion check. cpi must be passed in with headroom before the data starts.
+    close, div = _make_data({"A": [10, 10, 10, 10]})
+    weights = {"A": 1.0}
+    dates = close.index
+    cpi = pd.Series([100.0, 106.0], index=[dates[0] - pd.Timedelta(days=1), dates[2]])
+
+    value = simulate_constant_withdrawal(
+        close, div, weights, withdrawal_rate=0.1, initial_capital=1.0, cpi=cpi
+    )
+
+    assert not value.isna().any()
+    assert value.iloc[-1] == pytest.approx(0.9 - 0.106)
+
+
 def test_zero_withdrawal_rate_matches_plain_rebalanced_portfolio():
     close, div = _make_data({"A": [10, 11, 12, 13], "B": [20, 19, 22, 21]})
     weights = {"A": 0.5, "B": 0.5}
