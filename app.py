@@ -36,6 +36,7 @@ with st.sidebar:
     total_assets = st.number_input(
         "총 자산 (원)", min_value=0, value=500_000_000, step=10_000_000, format="%d"
     )
+    st.caption(f"= {total_assets:,}원")
     withdrawal_rate = st.selectbox(
         "인출률",
         main.WITHDRAWAL_RATE_OPTIONS,
