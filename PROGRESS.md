@@ -580,6 +580,35 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
   10~14시간 사례) 숨은 배수를 놓치기 쉬움 - 코드를 실제로 바꾼 뒤에는 전체를
   돌리기 전에 **작은 샘플로 실측해서 추정치를 검증**하는 게 훨씬 안전함
 
+### 28. Advisor 로직 (코드 기반, LLM 없음)
+- `advisor/advisor.py` (신규)
+  - `recommend_portfolios(results, tickers, withdrawal_rate, total_assets, ...)`:
+    사전계산된 `results.csv`(183,141행)에서 사용자의 인출률에 맞는 행만 골라,
+    저장돼 있던 원재료(`survival_probability`/`cagr`/`mdd`/`years_survived`)로
+    `retirement_score()`를 **사용자가 고른 가중치로 그 자리에서 재계산** - 배치
+    돌릴 때 박아넣은 고정 가중치에 안 묶이고, 재시뮬레이션 없이 즉시 응답 가능
+  - **다양성**: 활성 티커 조합(비중>0인 티커 집합)이 같은 행은 점수 제일 높은
+    것 하나만 남김 - 그래야 상위 3개가 "SPY 60/TLT 40"과 "SPY 62/TLT 38"처럼
+    사실상 같은 조합의 미세 변주로 채워지지 않음. 같은 티커 집합이라도
+    **가중치에 따라 그 안에서 어느 비중이 대표로 뽑히는지는 달라짐** (테스트로
+    growth 위주 vs 기본 가중치를 비교해서 확인)
+  - `total_assets`(사용자의 실제 자산 총액)는 결과 계산엔 안 쓰이고 오직
+    `월 인출액 = total_assets × 인출률 ÷ 12` 환산에만 씀 - `results.csv` 자체는
+    초기자본 1.0 기준 비율로 저장돼 있어서
+  - **고갈 시점 추정**: `results.csv`엔 무한 은퇴기간(perpetual, 27번) 평가의
+    시작연도별 결과가 개별로 안 남아있고(성공률 하나로 집계됨), 대신 단일
+    고정시작 백테스트의 `years_survived`(전체 백테스트 기간 중 고갈 전까지
+    버틴 비율)는 있음 - 이걸로 `data_start + years_survived × data_years`를
+    **근사 고갈 시점**으로 씀 (정확한 날짜가 아니라 근사치라는 걸 명시)
+  - `explain_recommendation(rec, rank)`: 위 결과를 자연어 문장으로 포맷 (비중,
+    인출률, 생존확률, 월 인출액, CAGR/MDD, 고갈 여부/시점)
+  - `advisor/tests/test_advisor.py` - 인출률 필터링, 활성 티커 집합 기준
+    중복제거(+ 가중치 바뀌면 대표 행도 바뀌는지), 고갈 행의 추정 날짜, 월
+    인출액 환산, 설명 문구 검증. 총 112개 테스트 통과(기존 106 + 신규 6)
+- 실측(실제 `results.csv`, 인출률 4%, 자산 5억원, main.py 기본 Score 가중치):
+  상위 3개가 VTI/IEF/GLD, QQQ/BND/GLD, QQQ/BND/SGOV/GLD로 서로 다른 자산 구성
+  - 전부 생존확률 100%, MDD -20%대, 월 인출액 1,666,667원으로 정상 계산됨
+
 ## 다음 후보 (사용자와 큰 그림 논의: 사전계산 + 가치관 기반 Advisor + 프론트엔드)
 
 - 순서는 **백엔드 먼저, UI는 마지막**으로 합의함
@@ -607,8 +636,8 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
    183,141행)
 2. ~~인출률을 main.py 상수가 아니라 스윕 가능한 옵션으로~~ → 26번에서 완료
    (은퇴기간은 `USE_PERPETUAL`로 대체 - 고정 N년 대신 "데이터 끝까지" 방식)
-3. Advisor 로직 (가중치 기반 추천 3개 + 생존확률/고갈시점/월인출액 서술) -
-   LLM 없이 우선 코드로 구현
+3. ~~Advisor 로직 (가중치 기반 추천 3개 + 생존확률/고갈시점/월인출액 서술)~~ →
+   28번에서 완료 (LLM 없이 코드 기반)
 4. `planner/` 폴더 정리(삭제)
 5. 프론트엔드 (Streamlit 유력)
 6. 버킷 전략용 Monte Carlo 엔진
