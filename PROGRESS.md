@@ -5,12 +5,12 @@ architecture-1.md 기준 진행 상황 기록.
 ## 아키텍처 흐름
 
 ```
-User → Portfolio Planner (LLM) → Portfolio Generator → Portfolio Simulator
-     → Portfolio Ranking → Advisor (LLM)
+User → Portfolio Generator → Portfolio Simulator → Portfolio Ranking → Advisor
 ```
 
-LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfolio Simulator`부터
-바닥부터 쌓는 중.
+Planner(LLM)는 만들지 않기로 결정하고 폴더째 삭제함 (28번 항목 앞 "다음 후보"
+참고) - "생각지도 못한 조합 발견"이라는 원래 목적이 Generator의 전수조사로 이미
+커버됨. Advisor도 LLM 대신 코드 기반으로 구현함(28번).
 
 ## 설계 결정
 
@@ -638,7 +638,8 @@ LLM 파트(Planner, Advisor)는 아직 손대지 않았고, Python 쪽 `Portfoli
    (은퇴기간은 `USE_PERPETUAL`로 대체 - 고정 N년 대신 "데이터 끝까지" 방식)
 3. ~~Advisor 로직 (가중치 기반 추천 3개 + 생존확률/고갈시점/월인출액 서술)~~ →
    28번에서 완료 (LLM 없이 코드 기반)
-4. `planner/` 폴더 정리(삭제)
+4. ~~`planner/` 폴더 정리(삭제)~~ → 완료. `requirements.txt`/`DEPENDENCIES.md`에서
+   Planner 전용 의존성(`requests`)도 같이 제거
 5. 프론트엔드 (Streamlit 유력)
 6. 버킷 전략용 Monte Carlo 엔진
 7. 데이터 출처(real/exact/approx) 표시를 결과에 반영
