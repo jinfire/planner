@@ -43,6 +43,7 @@ with st.sidebar:
         index=main.WITHDRAWAL_RATE_OPTIONS.index(0.04),
         format_func=lambda r: f"{r:.1%}",
     )
+    st.caption(f"= 월 {total_assets * withdrawal_rate / 12:,.0f}원")
     st.subheader("Score 가중치 (뭘 중요하게 볼지)")
     st.caption(
         "셋 다 같은 0~100 척도의 독립적인 다이얼입니다 - 서로 더해서 어떤 "
