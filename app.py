@@ -8,7 +8,10 @@ from simulator.cpi import fetch_cpi
 from simulator.data import fetch_extended_series, intersect_tickers
 from simulator.strategy import ConstantWithdrawalStrategy
 
-st.set_page_config(page_title="은퇴 포트폴리오 Advisor", layout="centered")
+ACCENT = "#0E9F6E"
+RANK_BADGES = {1: "🥇", 2: "🥈", 3: "🥉"}
+
+st.set_page_config(page_title="은퇴 포트폴리오 Advisor", page_icon="📊", layout="wide")
 
 
 @st.cache_data
@@ -27,15 +30,57 @@ def load_universe():
     return universe, full_cpi
 
 
+def allocation_donut(weights: dict[str, float]) -> alt.Chart:
+    df = pd.Series(weights, name="비중").reset_index()
+    df.columns = ["티커", "비중"]
+    df["구성"] = df["티커"] + " " + df["비중"].map(lambda w: f"{w:.0%}")
+    return (
+        alt.Chart(df)
+        .mark_arc(innerRadius=70, outerRadius=130, stroke="white", strokeWidth=2)
+        .encode(
+            theta=alt.Theta("비중:Q", stack=True),
+            order=alt.Order("비중:Q", sort="descending"),
+            color=alt.Color(
+                "구성:N",
+                sort=alt.SortField("비중", order="descending"),
+                scale=alt.Scale(scheme="set2"),
+                legend=alt.Legend(title="자산 배분", orient="right"),
+            ),
+            tooltip=["티커:N", alt.Tooltip("비중:Q", format=".0%")],
+        )
+        .properties(height=300)
+    )
+
+
+def trajectory_area(trajectory_in_10m: pd.Series) -> alt.Chart:
+    df = trajectory_in_10m.rename("자산가치").reset_index()
+    df.columns = ["날짜", "자산가치"]
+    # st.line_chart defaults to an interactive (zoomable) Altair chart - built
+    # manually here without .interactive(), since there's nothing worth zooming
+    # into on a simple trajectory line. Also sidesteps a Vega-Lite quirk where a
+    # field name containing "." silently breaks the data binding.
+    gradient = alt.Gradient(
+        gradient="linear",
+        stops=[alt.GradientStop(color="white", offset=0), alt.GradientStop(color=ACCENT, offset=1)],
+        x1=1, x2=1, y1=1, y2=0,
+    )
+    return (
+        alt.Chart(df)
+        .mark_area(line={"color": ACCENT, "strokeWidth": 2}, color=gradient)
+        .encode(x=alt.X("날짜:T", title=None), y=alt.Y("자산가치:Q", title="자산가치 (천만원)"))
+        .properties(height=220)
+    )
+
+
 results = load_results()
 
-st.title("은퇴 포트폴리오 Advisor")
+st.title("📊 은퇴 포트폴리오 Advisor")
 st.caption(f"사전계산된 {len(results):,}개 조합 중에서 조건에 맞는 3개를 추천합니다.")
 
 with st.sidebar:
     st.header("조건 입력")
     total_assets = st.number_input(
-        "총 자산 (원)", min_value=0, value=500_000_000, step=10_000_000, format="%d"
+        "총 자산 (원)", min_value=0, value=2_000_000_000, step=10_000_000, format="%d"
     )
     st.caption(f"= {total_assets:,}원")
     withdrawal_rate = st.selectbox(
@@ -107,42 +152,31 @@ if submitted:
 
         universe, full_cpi = load_universe()
         for i, rec in enumerate(recs, 1):
-            st.subheader(f"{i}순위")
-            st.write(build_rank_explanation(rec, i, total_assets))
-            col1, col2 = st.columns(2)
-            with col1:
-                # st.bar_chart also defaults to an interactive (zoomable) Altair
-                # chart - built manually here without .interactive(), same as the
-                # trajectory chart below.
-                weights_df = pd.Series(rec["weights"], name="비중").reset_index()
-                weights_df.columns = ["티커", "비중"]
-                bar_chart = alt.Chart(weights_df).mark_bar().encode(x="티커:N", y="비중:Q")
-                st.altair_chart(bar_chart, width='stretch')
-            with col2:
-                # Deliberately worded differently from the "자산 유지"/"성장"/"변동성"
-                # score-weight dials above - those are input preferences, these are
-                # the actual measured numbers for this specific recommendation, and
-                # reusing the same words made the two easy to mix up.
-                st.metric("자산 고갈률", f"{1 - rec['survival_probability']:.1%}")
-                st.metric("연 수익률", f"{rec['cagr']:.2%}")
-                st.metric("최대낙폭", f"{rec['mdd']:.2%}")
-                st.metric("월 인출액", f"{rec['monthly_withdrawal']:,.0f}원")
-                st.metric("최종 자산", f"{total_assets * rec['final_value']:,.0f}원")
+            with st.container(border=True):
+                st.subheader(f"{RANK_BADGES.get(i, '')} {i}순위")
+                st.write(build_rank_explanation(rec, i, total_assets))
 
-            strategy = ConstantWithdrawalStrategy(rec["weights"], withdrawal_rate, main.REBALANCE_FREQ)
-            close, dividends = intersect_tickers(universe, strategy.tickers)
-            trajectory = strategy.simulate(close, dividends, full_cpi).value
-            # result.value is normalized to initial_capital=1.0 - scale by this user's
-            # actual total_assets and show in 천만원 units so the y-axis reads as real
-            # money instead of an abstract multiplier.
-            trajectory_in_10m = trajectory * total_assets / 10_000_000
-            st.caption("자산 가치 추이 (단위: 천만원)")
-            # st.line_chart wraps an Altair chart with .interactive() on (scroll-zoom
-            # + drag-pan) - built manually here without that, since there's no need to
-            # zoom into a simple trajectory line. Also sidesteps a Vega-Lite quirk
-            # where a field name containing "." silently breaks the data binding.
-            chart_df = trajectory_in_10m.rename("자산가치").reset_index()
-            chart_df.columns = ["날짜", "자산가치"]
-            chart = alt.Chart(chart_df).mark_line().encode(x="날짜:T", y="자산가치:Q")
-            st.altair_chart(chart, width='stretch')
-            st.divider()
+                chart_col, metric_col = st.columns([3, 2])
+                with chart_col:
+                    st.altair_chart(allocation_donut(rec["weights"]), width="stretch")
+                with metric_col:
+                    # Deliberately worded differently from the "자산 유지"/"성장"/
+                    # "변동성" score-weight dials in the sidebar - those are input
+                    # preferences, these are the actual measured numbers for this
+                    # recommendation, and reusing the same words made the two easy
+                    # to mix up.
+                    st.metric("자산 고갈률", f"{1 - rec['survival_probability']:.1%}")
+                    st.metric("연 수익률", f"{rec['cagr']:.2%}")
+                    st.metric("최대낙폭", f"{rec['mdd']:.2%}")
+                    st.metric("월 인출액", f"{rec['monthly_withdrawal']:,.0f}원")
+                    st.metric("최종 자산", f"{total_assets * rec['final_value']:,.0f}원")
+
+                strategy = ConstantWithdrawalStrategy(rec["weights"], withdrawal_rate, main.REBALANCE_FREQ)
+                close, dividends = intersect_tickers(universe, strategy.tickers)
+                trajectory = strategy.simulate(close, dividends, full_cpi).value
+                # result.value is normalized to initial_capital=1.0 - scale by this
+                # user's actual total_assets and show in 천만원 units so the y-axis
+                # reads as real money instead of an abstract multiplier.
+                trajectory_in_10m = trajectory * total_assets / 10_000_000
+                st.caption("자산 가치 추이 (단위: 천만원)")
+                st.altair_chart(trajectory_area(trajectory_in_10m), width="stretch")
