@@ -49,7 +49,9 @@ TICKERS = [
     "GLD", "DBC",  # gold / broad commodities
 ]
 GENERATOR_STEP = 20  # % increments between candidate weights
-WITHDRAWAL_RATE_OPTIONS = [0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06]
+WITHDRAWAL_RATE_OPTIONS = [
+    0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.065, 0.07, 0.075, 0.08,
+]
 START = "2000-01-01"
 END = datetime.date.today().isoformat()  # always fetch through today, not a fixed date
 REBALANCE_FREQ = "quarterly"

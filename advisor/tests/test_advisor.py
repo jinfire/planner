@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from advisor import build_intro_message, build_rank_explanation, describe_ticker, recommend_portfolios
+from advisor import build_intro_message, build_rank_explanation, describe_ticker, format_won, recommend_portfolios
 
 TICKERS = ["A", "B", "C"]
 
@@ -139,8 +139,25 @@ def test_build_rank_explanation_states_final_amount_in_won_not_a_multiplier():
     text = build_rank_explanation(top_rec, rank=1, total_assets=500_000_000)
 
     assert "1순위" in text
-    assert f"{500_000_000 * 1.5:,.0f}원" in text
+    assert "7억 5,000만원" in text  # 500_000_000 * 1.5
     assert "1.5배" not in text
+    assert "750,000,000원" not in text
+
+
+def test_format_won_combines_eok_and_man():
+    assert format_won(5_748_496_717) == "57억 4,849만원"
+
+
+def test_format_won_omits_zero_man_part():
+    assert format_won(2_000_000_000) == "20억원"
+
+
+def test_format_won_below_eok_shows_man_only():
+    assert format_won(6_666_667) == "666만원"
+
+
+def test_format_won_below_man_falls_back_to_plain_digits():
+    assert format_won(5_000) == "5,000원"
 
 
 def test_build_rank_explanation_mentions_depletion_date_when_depleted():

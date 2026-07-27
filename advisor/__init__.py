@@ -3,6 +3,7 @@ from .advisor import (
     build_intro_message,
     build_rank_explanation,
     describe_ticker,
+    format_won,
     recommend_portfolios,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "build_intro_message",
     "build_rank_explanation",
     "describe_ticker",
+    "format_won",
     "TICKER_ASSET_CLASS",
 ]

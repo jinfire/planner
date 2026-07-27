@@ -32,6 +32,23 @@ def describe_ticker(ticker: str) -> str:
     return f"{ticker}({asset_class})" if asset_class else ticker
 
 
+def format_won(amount: float) -> str:
+    """`"57억 4,849만원"` instead of `"5,748,496,717원"` - 억/만 is how large won
+    amounts are actually read out loud in Korean, a comma-grouped digit string isn't.
+    Anything below 만원 is dropped (this is for headline figures, not accounting)."""
+    amount = round(amount)
+    eok, remainder = divmod(amount, 100_000_000)
+    man = remainder // 10_000
+    parts = []
+    if eok:
+        parts.append(f"{eok:,}억")
+    if man:
+        parts.append(f"{man:,}만")
+    if not parts:
+        parts.append(f"{amount:,}")
+    return " ".join(parts) + "원"
+
+
 def recommend_portfolios(
     results: pd.DataFrame,
     tickers: list[str],
@@ -152,5 +169,5 @@ def build_rank_explanation(rec: dict, rank: int, total_assets: float) -> str:
     final_amount = total_assets * rec["final_value"]
     return (
         f"{rank}순위 {allocation} 조합은 {rec['data_years']}년간 한 번도 바닥나지 않고 "
-        f"{final_amount:,.0f}원까지 불어났어요."
+        f"{format_won(final_amount)}까지 불어났어요."
     )

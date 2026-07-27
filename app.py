@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 
 import main
-from advisor import build_intro_message, build_rank_explanation, recommend_portfolios
+from advisor import build_intro_message, build_rank_explanation, format_won, recommend_portfolios
 from simulator.cpi import fetch_cpi
 from simulator.data import fetch_extended_series, intersect_tickers
 from simulator.strategy import ConstantWithdrawalStrategy
@@ -82,14 +82,14 @@ with st.sidebar:
     total_assets = st.number_input(
         "총 자산 (원)", min_value=0, value=2_000_000_000, step=10_000_000, format="%d"
     )
-    st.caption(f"= {total_assets:,}원")
+    st.caption(f"= {format_won(total_assets)}")
     withdrawal_rate = st.selectbox(
         "인출률",
         main.WITHDRAWAL_RATE_OPTIONS,
         index=main.WITHDRAWAL_RATE_OPTIONS.index(0.04),
         format_func=lambda r: f"{r:.1%}",
     )
-    st.caption(f"= 월 {total_assets * withdrawal_rate / 12:,.0f}원")
+    st.caption(f"= 월 {format_won(total_assets * withdrawal_rate / 12)}")
     st.subheader("Score 가중치 (뭘 중요하게 볼지)")
     st.caption(
         "셋 다 같은 1~10 척도의 독립적인 다이얼입니다 - 서로 더해서 어떤 "
@@ -186,8 +186,8 @@ if "recs" in st.session_state:
                     st.metric("자산 고갈률", f"{1 - rec['survival_probability']:.1%}")
                     st.metric("연 수익률", f"{rec['cagr']:.2%}")
                     st.metric("최대낙폭", f"{rec['mdd']:.2%}")
-                    st.metric("월 인출액", f"{rec['monthly_withdrawal']:,.0f}원")
-                    st.metric("최종 자산", f"{snap['total_assets'] * rec['final_value']:,.0f}원")
+                    st.metric("월 인출액", format_won(rec["monthly_withdrawal"]))
+                    st.metric("최종 자산", format_won(snap["total_assets"] * rec["final_value"]))
 
                 strategy = ConstantWithdrawalStrategy(
                     rec["weights"], snap["withdrawal_rate"], main.REBALANCE_FREQ
