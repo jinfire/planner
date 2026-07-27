@@ -132,8 +132,15 @@ with st.sidebar:
     longevity_weight = main.SCORE_LONGEVITY_WEIGHT
     submitted = st.button("추천 받기", type="primary")
 
+# st.button only returns True on the exact rerun it was clicked - Streamlit reruns
+# the whole script on *any* widget change (moving a slider, editing total_assets,
+# ...), and on those reruns `submitted` goes back to False. Without stashing the
+# result in session_state, adjusting any other input would silently blank out (or
+# recompute) the recommendations before the user asked for that - persist both the
+# computed recs and the exact inputs used to build them, so they only change on an
+# actual button click.
 if submitted:
-    recs = recommend_portfolios(
+    st.session_state["recs"] = recommend_portfolios(
         results,
         main.TICKERS,
         withdrawal_rate,
@@ -144,17 +151,28 @@ if submitted:
         longevity_weight=longevity_weight,
         top_n=3,
     )
+    st.session_state["snapshot"] = {
+        "survival_weight": survival_weight,
+        "growth_weight": growth_weight,
+        "risk_weight": risk_weight,
+        "total_assets": total_assets,
+        "withdrawal_rate": withdrawal_rate,
+    }
+
+if "recs" in st.session_state:
+    recs = st.session_state["recs"]
+    snap = st.session_state["snapshot"]
 
     if not recs:
         st.warning("이 인출률에 해당하는 사전계산 결과가 없습니다.")
     else:
-        st.write(build_intro_message(survival_weight, growth_weight, risk_weight))
+        st.write(build_intro_message(snap["survival_weight"], snap["growth_weight"], snap["risk_weight"]))
 
         universe, full_cpi = load_universe()
         for i, rec in enumerate(recs, 1):
             with st.container(border=True):
                 st.subheader(f"{RANK_BADGES.get(i, '')} {i}순위")
-                st.write(build_rank_explanation(rec, i, total_assets))
+                st.write(build_rank_explanation(rec, i, snap["total_assets"]))
 
                 chart_col, metric_col = st.columns([3, 2])
                 with chart_col:
@@ -169,14 +187,16 @@ if submitted:
                     st.metric("연 수익률", f"{rec['cagr']:.2%}")
                     st.metric("최대낙폭", f"{rec['mdd']:.2%}")
                     st.metric("월 인출액", f"{rec['monthly_withdrawal']:,.0f}원")
-                    st.metric("최종 자산", f"{total_assets * rec['final_value']:,.0f}원")
+                    st.metric("최종 자산", f"{snap['total_assets'] * rec['final_value']:,.0f}원")
 
-                strategy = ConstantWithdrawalStrategy(rec["weights"], withdrawal_rate, main.REBALANCE_FREQ)
+                strategy = ConstantWithdrawalStrategy(
+                    rec["weights"], snap["withdrawal_rate"], main.REBALANCE_FREQ
+                )
                 close, dividends = intersect_tickers(universe, strategy.tickers)
                 trajectory = strategy.simulate(close, dividends, full_cpi).value
                 # result.value is normalized to initial_capital=1.0 - scale by this
                 # user's actual total_assets and show in 천만원 units so the y-axis
                 # reads as real money instead of an abstract multiplier.
-                trajectory_in_10m = trajectory * total_assets / 10_000_000
+                trajectory_in_10m = trajectory * snap["total_assets"] / 10_000_000
                 st.caption("자산 가치 추이 (단위: 천만원)")
                 st.altair_chart(trajectory_area(trajectory_in_10m), width="stretch")
